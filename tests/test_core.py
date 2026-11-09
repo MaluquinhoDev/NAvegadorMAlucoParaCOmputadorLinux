@@ -1,6 +1,6 @@
 import unittest
 
-from app.core import HOME_URL, MAX_RESIDENT_TABS, MAX_TABS, SUSPEND_AFTER_SECONDS, can_create_tab, is_youtube_shorts, normalize_input
+from app.core import HOME_URL, MAX_RESIDENT_TABS, MAX_TABS, SUSPEND_AFTER_SECONDS, can_create_tab, is_youtube_shorts, normalize_input, search_url
 
 
 class BrowserCoreTests(unittest.TestCase):
@@ -12,6 +12,13 @@ class BrowserCoreTests(unittest.TestCase):
 
     def test_search_text_uses_search_engine(self):
         self.assertEqual(normalize_input("python listas"), "https://duckduckgo.com/?q=python+listas")
+
+    def test_search_engine_selection(self):
+        self.assertEqual(normalize_input("python listas", "Google"), "https://www.google.com/search?q=python+listas")
+        self.assertEqual(normalize_input("python listas", "Startpage"), "https://www.startpage.com/sp/search?query=python+listas")
+
+    def test_unknown_search_engine_falls_back_safely(self):
+        self.assertEqual(search_url("linux mint", "unknown"), "https://duckduckgo.com/?q=linux+mint")
 
     def test_unsupported_scheme_is_rejected(self):
         with self.assertRaises(ValueError):
