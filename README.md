@@ -75,4 +75,4 @@ O inventário é baseado no código e na documentação disponíveis no reposit�
 
 ## Projeto original
 
-[ M a l u q u i n h o D e v / N a v e g a d o r M a l u c o ](https://github.com/MaluquinhoDev/NavegadorMaluco)
+[MaluquinhoDev/NavegadorMaluco](https://github.com/MaluquinhoDev/NavegadorMaluco)
