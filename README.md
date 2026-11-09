@@ -130,7 +130,7 @@ A CI publica dois pacotes separados:
 - **Python:** `navegador-maluco-linux-mint-deb`, arquitetura independente, usa o interpretador do sistema.
 - **Nativa Nuitka:** `navegador-maluco-native-deb-ubuntu-24.04-amd64`, executável compilado, empacotado como .deb para amd64 e validado em Ubuntu 24.04. O comando instalado é `navegador-maluco-native`.
 
-A versão nativa acelerada ainda depende do runtime Python e das bibliotecas GTK/WebKitGTK compatíveis. O pacote construído em Ubuntu 24.04 destina-se inicialmente à base Ubuntu 24.04 (Linux Mint 22.x); não deve ser instalado em Mint 21.x ou Debian antigo sem build e teste específicos. A CI confirma instalação e inicialização, não um ganho de velocidade em benchmark.
+A versão nativa acelerada ainda depende do runtime Python e das bibliotecas GTK/WebKitGTK compatíveis. O pacote construído em Ubuntu 24.04 destina-se inicialmente à base Ubuntu 24.04 (Linux Mint 22.x); não deve ser instalado em Mint 21.x ou Debian antigo sem build e teste específicos. A CI instala as duas variantes, executa smoke tests e compara cinco inicializações Python versus Nuitka em ambiente idêntico, medindo tempo e pico de RSS. Esse benchmark é do runner Ubuntu, não do Celeron físico nem da navegação completa.
 
 Detalhes e critérios de promoção: [docs/NATIVE_BUILD.md](docs/NATIVE_BUILD.md).
 
