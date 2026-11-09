@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Navegador Maluco
+Comment=Navegador web desktop
+Exec=navegador-maluco %U
+Icon=navegador-maluco
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;
+StartupNotify=true
