@@ -36,7 +36,7 @@ A versão 0.2.0 adota um perfil econômico para máquinas com aproximadamente 4 
 - Abas estacionadas mantêm URL e título; ao restaurar, a página é carregada novamente. Estado transitório de aplicações web pode não ser preservado.
 - Abas com reprodução ativa ou formulários alterados não são estacionadas automaticamente.
 - A aceleração gráfica permanece na política padrão sob demanda do WebKitGTK; não é forçada nem desativada.
-- Diagnóstico do sistema disponível em scripts/diagnose-performance.sh.
+- Diagnóstico do sistema disponível em scripts/diagnose-performance.sh. Guia completo: [docs/PERFORMANCE_LOW_MEMORY.md](docs/PERFORMANCE_LOW_MEMORY.md).
 
 O estacionamento é conservador: a meta de três WebViews residentes pode ser temporariamente excedida quando as abas restantes estão ocupadas ou não podem ser estacionadas com segurança.
 
@@ -56,7 +56,7 @@ O estacionamento é conservador: a meta de três WebViews residentes pode ser te
 
 ## Limitações conhecidas
 
-Esta é uma **versão inicial do shell desktop**, não a paridade integral com o Android. Ainda faltam, entre outros recursos, abas estacionadas e constelações, perfis isolados, gerenciador completo de extensões, bloqueador de rede, tradução offline, player próprio/Media3, PiP, migração dos dados Android e várias opções avançadas de atenção. O YouTube pode alterar seu DOM e quebrar seletores.
+Esta é uma **versão inicial do shell desktop**, não a paridade integral com o Android. Ainda faltam, entre outros recursos, constelações e gestão avançada de sessões, perfis isolados, gerenciador completo de extensões, bloqueador de rede, tradução offline, player próprio/Media3, PiP, migração dos dados Android e várias opções avançadas de atenção. O YouTube pode alterar seu DOM e quebrar seletores.
 
 O WebKitGTK não é Chromium nem Gecko. Alguns sites, codecs, DRM, autenticação e extensões podem se comportar de forma diferente. Não há medição publicada de consumo no Celeron N3060 ainda; o hardware de referência continua sendo Celeron N3060 com 4 GB de RAM.
 
