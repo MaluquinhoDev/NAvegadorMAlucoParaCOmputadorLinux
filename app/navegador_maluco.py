@@ -340,7 +340,7 @@ class BrowserWindow(Gtk.Window):
                 except GLib.Error:
                     pass
         self._suggestion_generation += 1
-        self._suggestion_executor.shutdown(wait=False, cancel_futures=True)
+        self._suggestion_executor.shutdown(wait=False)
         try:
             self.store.flush_history()
             self.store.db.close()
