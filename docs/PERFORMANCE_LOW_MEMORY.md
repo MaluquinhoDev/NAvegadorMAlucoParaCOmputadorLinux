@@ -1,5 +1,12 @@
 # Perfil econômico: Intel Celeron N3060 e 4 GB de RAM
 
+## Correções da versão 0.4.3
+
+- **Inicialização após o ciclo GTK:** a janela e seus controles são construídos e exibidos antes da criação do primeiro WebView. O primeiro WebView é instanciado por um callback GLib.idle_add, depois que o loop principal do GTK começa a processar eventos. Isso evita bloquear a primeira apresentação da janela com a inicialização do WebKitGTK.
+- **Página inicial adiada:** após criar o primeiro WebView, uma página local simples é apresentada; a navegação remota inicial é agendada 400 ms depois. O atraso é uma medida de responsividade percebida, não uma otimização da rede.
+- **Diagnóstico de recursos desativado por padrão:** os sinais de cada recurso WebKit e a coleta JavaScript de Navigation Timing só são conectados quando NM_DIAGNOSTICS=1. O perfil normal deixa de executar callbacks extras para cada recurso. Para habilitar diagnóstico temporário, inicie o aplicativo com essa variável de ambiente.
+- **Limitação:** a construção do WebView ainda ocorre na thread principal, mas somente depois que a janela já foi apresentada e o ciclo de eventos está ativo. A navegação e a renderização da página são gerenciadas pelo WebKitGTK. O desempenho físico ainda precisa ser medido no computador-alvo.
+
 ## Diagnóstico por recurso da versão 0.4.2
 
 - A WebView acompanha os eventos `resource-load-started`, `sent-request`, `notify::response`, `finished` e `failed` do WebKitGTK.
