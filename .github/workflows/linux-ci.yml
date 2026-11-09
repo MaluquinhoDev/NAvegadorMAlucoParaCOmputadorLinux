@@ -66,10 +66,10 @@ jobs:
         run: bash scripts/check-extension.sh
 
       - name: Build .deb package
-        run: APP_VERSION=0.4.3 bash scripts/build-deb.sh
+        run: APP_VERSION=0.4.4 bash scripts/build-deb.sh
 
       - name: Inspect Debian package
-        run: dpkg-deb --info dist/navegador-maluco_0.4.3_all.deb
+        run: dpkg-deb --info dist/navegador-maluco_0.4.4_all.deb
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
@@ -104,6 +104,15 @@ jobs:
       - name: Smoke-test compiled executable
         run: timeout 25s xvfb-run -a dist/native/navegador-maluco-native --smoke-test
 
+      - name: Build Debian package from the compiled executable
+        run: APP_VERSION=0.4.4 bash scripts/build-native-deb.sh
+
+      - name: Install and smoke-test the native Debian package
+        run: |
+          sudo apt-get install -y ./dist/navegador-maluco-native_0.4.4_amd64.deb
+          timeout 25s xvfb-run -a navegador-maluco-native --smoke-test
+          dpkg-query -W navegador-maluco-native
+
       - name: Upload experimental native executable
         uses: actions/upload-artifact@v4
         with:
@@ -111,3 +120,11 @@ jobs:
           path: dist/native/**
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload installable native Debian package
+        uses: actions/upload-artifact@v4
+        with:
+          name: navegador-maluco-native-deb-ubuntu-24.04-amd64
+          path: dist/navegador-maluco-native_0.4.4_amd64.deb
+          if-no-files-found: error
+          retention-days: 90
