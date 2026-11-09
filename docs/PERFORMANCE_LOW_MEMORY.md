@@ -1,5 +1,13 @@
 # Perfil econômico: Intel Celeron N3060 e 4 GB de RAM
 
+## Diagnóstico por recurso da versão 0.4.2
+
+- A WebView acompanha os eventos `resource-load-started`, `sent-request`, `received-response`, `finished` e `failed` do WebKitGTK.
+- O tooltip da navegação apresenta contagens de recursos iniciados/concluídos/falhos, respostas HTTP com status 400 ou superior, redirecionamentos, bytes declarados nas respostas e durações média/máxima observadas.
+- O diagnóstico mantém apenas contadores e tempos em memória durante a navegação. Não armazena URLs, parâmetros de pesquisa, cabeçalhos, cookies nem conteúdo das páginas.
+- Os bytes declarados por respostas podem não representar o tráfego efetivo (compressão, cache, respostas parciais e respostas sem tamanho conhecido). Recursos que falham antes de uma resposta não contribuem para bytes. Os valores servem para localizar padrões, não para substituir um waterfall de rede ou um benchmark.
+- A instrumentação mede e diagnostica; não acelera por si só o carregamento. Ainda não há benchmark comparativo executado no Celeron N3060.
+
 ## Otimizações adicionais da versão 0.4.1
 
 - **Inicialização em duas etapas:** a janela apresenta primeiro uma tela local mínima; a navegação para a página inicial remota é adiada em 400 ms após a janela ser mostrada. Isso melhora a responsividade percebida da interface, mas não reduz o tempo de resposta do site nem garante menor tempo total de inicialização.
