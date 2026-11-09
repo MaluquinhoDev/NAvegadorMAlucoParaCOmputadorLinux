@@ -47,7 +47,7 @@ Section: web
 Priority: optional
 Architecture: $ARCH
 Maintainer: Navegador Maluco contributors
-Depends: python3, python3-gi, gir1.2-gtk-3.0, gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0
+Depends: python3 (>= 3.12), python3 (<< 3.13), python3-gi, gir1.2-gtk-3.0, gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0
 Description: Navegador Maluco desktop browser (Nuitka native build)
  Executable compiled with Nuitka. GTK, PyGObject and WebKitGTK remain
  system dependencies; this package is built for amd64 Linux systems.
