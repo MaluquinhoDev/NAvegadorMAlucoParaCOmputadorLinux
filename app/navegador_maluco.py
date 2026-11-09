@@ -21,10 +21,10 @@ except ValueError:
     gi.require_version("WebKit2", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
 
-from core import HOME_URL, MAX_TABS, MAX_RESIDENT_TABS, SUSPEND_AFTER_SECONDS, can_create_tab, is_youtube_shorts, normalize_input
+from core import HOME_URL, MAX_TABS, MAX_RESIDENT_TABS, SUSPEND_AFTER_SECONDS, SEARCH_ENGINES, can_create_tab, is_youtube_shorts, normalize_input
 
 APP_NAME = "Navegador Maluco"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 APP_DIR = Path(__file__).resolve().parent
 ASSET_DIR = APP_DIR / "assets"
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "navegador-maluco"
@@ -80,6 +80,29 @@ class BrowserStore:
         self.db.execute("DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY id DESC LIMIT 5000)")
         self.db.commit()
 
+    def search_suggestions(self, query, limit=8):
+        """Sugestões locais: favoritos e histórico, sem enviar texto a terceiros."""
+        query = (query or "").strip()
+        if len(query) < 2:
+            return []
+        pattern = f"%{query}%"
+        favorites = self.db.execute(
+            "SELECT url,title FROM favorites WHERE title LIKE ? OR url LIKE ? ORDER BY created_at DESC LIMIT ?",
+            (pattern, pattern, limit)
+        ).fetchall()
+        history = self.db.execute(
+            "SELECT url,title FROM history WHERE title LIKE ? OR url LIKE ? ORDER BY visited_at DESC LIMIT ?",
+            (pattern, pattern, limit)
+        ).fetchall()
+        result, seen = [], set()
+        for url, title in favorites + history:
+            if url not in seen:
+                result.append((url, title))
+                seen.add(url)
+            if len(result) >= limit:
+                break
+        return result
+
     def favorites(self):
         return self.db.execute("SELECT url,title FROM favorites ORDER BY created_at DESC LIMIT 1000").fetchall()
 
@@ -124,7 +147,9 @@ class BrowserWindow(Gtk.Window):
 
         self.back_button = self.icon_button("go-previous", "Voltar", lambda *_: self.active_view().go_back() if self.active_view().can_go_back() else None)
         self.forward_button = self.icon_button("go-next", "Avançar", lambda *_: self.active_view().go_forward() if self.active_view().can_go_forward() else None)
-        self.reload_button = self.icon_button("view-refresh", "Recarregar", lambda *_: self.active_view().reload())
+        self.reload_button = self.icon_button("view-refresh", "Recarregar", lambda *_: self.active_view().reload() if self.active_view() else None)
+        self.stop_button = self.icon_button("process-stop", "Parar carregamento", lambda *_: self.stop_active_loading())
+        self.stop_button.hide()
         self.home_button = self.icon_button("go-home", "Página inicial", lambda *_: self.active_view().load_uri(HOME_URL))
         for button in (self.back_button, self.forward_button, self.reload_button, self.home_button):
             toolbar.pack_start(button, False, False, 0)
@@ -135,7 +160,24 @@ class BrowserWindow(Gtk.Window):
         self.address.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-search")
         self.address.connect("activate", self.on_address_activate)
         self.address.connect("icon-press", self.on_address_icon)
+        self.address_model = Gtk.ListStore(str, str)
+        self.address_completion = Gtk.EntryCompletion()
+        self.address_completion.set_model(self.address_model)
+        self.address_completion.set_text_column(0)
+        self.address_completion.set_minimum_key_length(2)
+        self.address_completion.set_inline_completion(False)
+        self.address_completion.set_popup_completion(True)
+        self.address_completion.connect("match-selected", self.on_address_suggestion_selected)
+        self.address.set_completion(self.address_completion)
+        self.address.connect("changed", self.on_address_changed)
+
+        self.search_button = Gtk.MenuButton.new()
+        self.search_button.set_label(self.settings.get("search_engine", "DuckDuckGo"))
+        self.search_button.set_tooltip_text("Mecanismo de pesquisa")
+        self.search_button.set_popup(self.build_search_menu())
+        toolbar.pack_start(self.search_button, False, False, 0)
         toolbar.pack_start(self.address, True, True, 4)
+        toolbar.pack_start(self.stop_button, False, False, 0)
 
         self.favorite_button = Gtk.Button(label="☆")
         self.favorite_button.set_tooltip_text("Adicionar/remover favorito")
@@ -152,6 +194,11 @@ class BrowserWindow(Gtk.Window):
         self.menu_button.set_tooltip_text("Menu do navegador")
         self.menu_button.set_popup(self.build_menu())
         toolbar.pack_start(self.menu_button, False, False, 0)
+
+        self.load_progress = Gtk.ProgressBar()
+        self.load_progress.set_size_request(-1, 3)
+        self.load_progress.set_no_show_all(True)
+        root.pack_start(self.load_progress, False, False, 0)
 
         self.notebook = Gtk.Notebook()
         self.notebook.set_scrollable(True)
@@ -173,7 +220,7 @@ class BrowserWindow(Gtk.Window):
         self.show_all()
 
     def load_settings(self):
-        data = {"playback_rate": 1.0, "youtube_focus": dict(FOCUS_DEFAULTS)}
+        data = {"playback_rate": 1.0, "search_engine": "DuckDuckGo", "youtube_focus": dict(FOCUS_DEFAULTS)}
         try:
             saved = json.loads(self.config_path.read_text(encoding="utf-8"))
             data.update(saved)
@@ -193,6 +240,23 @@ class BrowserWindow(Gtk.Window):
         button.set_tooltip_text(tooltip)
         button.connect("clicked", callback)
         return button
+
+    def build_search_menu(self):
+        menu = Gtk.Menu()
+        for engine in SEARCH_ENGINES:
+            item = Gtk.MenuItem(label=engine)
+            item.connect("activate", self.set_search_engine, engine)
+            menu.append(item)
+        menu.show_all()
+        return menu
+
+    def set_search_engine(self, _item, engine):
+        if engine not in SEARCH_ENGINES:
+            return
+        self.settings["search_engine"] = engine
+        self.search_button.set_label(engine)
+        self.save_settings()
+        self.status.set_text(f"Pesquisa configurada: {engine}")
 
     def build_menu(self):
         menu = Gtk.Menu()
@@ -233,6 +297,21 @@ class BrowserWindow(Gtk.Window):
             if view:
                 view.reload()
             return True
+        if ctrl and event.keyval in (Gdk.KEY_f, Gdk.KEY_F):
+            self.show_find_bar()
+            return True
+        if ctrl and event.keyval in (Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_KP_Add):
+            self.adjust_zoom(0.1)
+            return True
+        if ctrl and event.keyval in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract):
+            self.adjust_zoom(-0.1)
+            return True
+        if ctrl and event.keyval in (Gdk.KEY_0, Gdk.KEY_KP_0):
+            view = self.active_view()
+            if view:
+                view.set_zoom_level(1.0)
+                self.status.set_text("Zoom: 100%")
+            return True
         if alt and event.keyval == Gdk.KEY_Left:
             view = self.active_view()
             if view and view.can_go_back():
@@ -272,6 +351,8 @@ class BrowserWindow(Gtk.Window):
         view.connect("decide-policy", self.on_decide_policy, page)
         view.connect("create", self.on_create_webview)
         view.connect("web-process-terminated", self.on_web_process_terminated, page)
+        view.connect("notify::estimated-load-progress", self.on_load_progress_changed, page)
+        view.connect("mouse-target-changed", self.on_mouse_target_changed, page)
         page.pack_start(view, True, True, 0)
         self.webviews[page] = view
         return view
@@ -432,12 +513,57 @@ class BrowserWindow(Gtk.Window):
             return False
         return False
 
+    def update_loading_ui(self, view):
+        loading = bool(view and view.is_loading())
+        if loading:
+            self.reload_button.hide()
+            self.stop_button.show()
+            self.load_progress.show()
+            self.load_progress.set_fraction(max(0.02, view.get_estimated_load_progress()))
+        else:
+            self.stop_button.hide()
+            self.reload_button.show()
+            self.load_progress.hide()
+            self.load_progress.set_fraction(0.0)
+
+    def stop_active_loading(self):
+        view = self.active_view()
+        if view and view.is_loading():
+            view.stop_loading()
+            self.status.set_text("Carregamento interrompido.")
+
+    def on_load_progress_changed(self, view, _param, page):
+        if page is self.active_page() and view.is_loading():
+            self.load_progress.set_fraction(max(0.02, view.get_estimated_load_progress()))
+
+    def on_mouse_target_changed(self, _view, hit_test, _modifiers, page):
+        if page is not self.active_page():
+            return
+        try:
+            if hit_test.context_is_link():
+                target = hit_test.get_link_uri()
+                if target:
+                    self.status.set_text(target[:220])
+        except (AttributeError, TypeError):
+            pass
+
     def on_load_changed(self, view, event, page):
         if event == WebKit2.LoadEvent.STARTED:
             page.url = view.get_uri() or ""
             if page is self.active_page():
                 self.address.set_text(page.url)
-                self.status.set_text("Carregando…")
+                self.status.set_text("Conectando e carregando…")
+                self.load_progress.set_fraction(0.02)
+                self.update_loading_ui(view)
+        elif event == WebKit2.LoadEvent.REDIRECTED:
+            page.url = view.get_uri() or page.url
+            if page is self.active_page():
+                self.status.set_text("Redirecionando…")
+        elif event == WebKit2.LoadEvent.COMMITTED:
+            page.url = view.get_uri() or page.url
+            if page is self.active_page():
+                self.address.set_text(page.url)
+                self.status.set_text("Recebendo conteúdo…")
         elif event == WebKit2.LoadEvent.FINISHED:
             url = view.get_uri() or ""
             title = view.get_title() or url
@@ -448,6 +574,8 @@ class BrowserWindow(Gtk.Window):
                 self.address.set_text(url)
                 self.favorite_button.set_label("★" if self.store.is_favorite(url) else "☆")
                 self.status.set_text(title[:160])
+                self.update_loading_ui(view)
+                self.load_progress.set_fraction(1.0)
             self.inject_page_features(view, url)
 
     def inject_page_features(self, view, url):
@@ -512,8 +640,10 @@ class BrowserWindow(Gtk.Window):
         except (GLib.Error, TypeError) as exc:
             self.status.set_text(f"Não foi possível aplicar um recurso da página: {exc}")
 
-    def on_load_failed(self, _view, _event, uri, error, page):
-        self.status.set_text(f"Falha ao carregar {uri}: {error.message}")
+    def on_load_failed(self, view, _event, uri, error, page):
+        if page is self.active_page():
+            self.update_loading_ui(view)
+            self.status.set_text(f"Falha ao carregar {uri}: {error.message}")
         return False
 
     def on_title_changed(self, view, _param, page):
@@ -529,22 +659,91 @@ class BrowserWindow(Gtk.Window):
         page.last_active = time.monotonic()
         if not view:
             return
+        self.update_loading_ui(view)
         url = view.get_uri() or getattr(page, "url", "")
         self.address.set_text(url)
         self.favorite_button.set_label("★" if self.store.is_favorite(url) else "☆")
         self.status.set_text(view.get_title() or "Pronto")
 
-    def on_address_activate(self, entry):
-        try:
-            uri = normalize_input(entry.get_text())
-        except ValueError as exc:
-            self.status.set_text(str(exc))
+    def on_address_changed(self, entry):
+        query = entry.get_text().strip()
+        self.address_model.clear()
+        if len(query) < 2:
             return
+        rows = self.store.search_suggestions(query, limit=8)
+        for page in self.webviews:
+            url = getattr(page, "url", "")
+            title = getattr(page, "title", "")
+            if query.casefold() in (url + " " + title).casefold():
+                rows.insert(0, (url, title or url))
+        seen = set()
+        for url, title in rows:
+            if url and url not in seen:
+                self.address_model.append([f"{(title or url)[:55]} — {url[:90]}", url])
+                seen.add(url)
+            if len(seen) >= 8:
+                break
+
+    def on_address_suggestion_selected(self, _completion, model, tree_iter):
+        target = model.get_value(tree_iter, 1)
+        self.address.set_text(target)
+        self.navigate_to(target)
+        return True
+
+    def navigate_to(self, uri):
         view = self.active_view()
         if view:
             view.load_uri(uri)
         else:
             self.new_tab(uri)
+
+    def on_address_activate(self, entry):
+        try:
+            uri = normalize_input(entry.get_text(), self.settings.get("search_engine", "DuckDuckGo"))
+        except ValueError as exc:
+            self.status.set_text(str(exc))
+            return
+        self.navigate_to(uri)
+
+    def adjust_zoom(self, delta):
+        view = self.active_view()
+        if not view:
+            return
+        level = min(2.0, max(0.5, view.get_zoom_level() + delta))
+        view.set_zoom_level(level)
+        self.status.set_text(f"Zoom: {round(level * 100)}%")
+
+    def show_find_bar(self):
+        view = self.active_view()
+        if not view:
+            return
+        controller = view.get_find_controller()
+        dialog = Gtk.Dialog(title="Localizar nesta página", transient_for=self, flags=Gtk.DialogFlags.DESTROY_WITH_PARENT)
+        dialog.add_button("Anterior", -10)
+        dialog.add_button("Próximo", -11)
+        dialog.add_button("Fechar", Gtk.ResponseType.CLOSE)
+        dialog.set_default_size(420, 90)
+        entry = Gtk.Entry()
+        entry.set_placeholder_text("Texto para localizar")
+        dialog.get_content_area().pack_start(entry, True, True, 8)
+        def search_current(*_args):
+            query = entry.get_text().strip()
+            if query:
+                controller.search(query, WebKit2.FindOptions.CASE_INSENSITIVE, 1000)
+            else:
+                controller.search_finish()
+        entry.connect("changed", search_current)
+        def on_response(_dialog, response):
+            if response == -10:
+                controller.search_previous()
+            elif response == -11:
+                controller.search_next()
+            else:
+                controller.search_finish()
+                dialog.destroy()
+        dialog.connect("response", on_response)
+        dialog.show_all()
+        entry.grab_focus()
 
     def on_address_icon(self, _entry, _position, _event):
         self.address.grab_focus()
