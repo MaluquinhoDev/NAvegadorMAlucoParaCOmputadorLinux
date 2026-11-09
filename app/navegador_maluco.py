@@ -354,7 +354,7 @@ class BrowserWindow(Gtk.Window):
                       const defaults = DEFAULTS;
                       let store = {};
                       try { store = JSON.parse(localStorage.getItem('__nm_extension_storage') || '{}'); } catch (_) {}
-                      store = Object.assign({}, defaults, store);
+                      store = Object.assign({}, store, defaults);
                       const persist = () => localStorage.setItem('__nm_extension_storage', JSON.stringify(store));
                       window.browser = window.browser || {};
                       window.browser.storage = {local: {
