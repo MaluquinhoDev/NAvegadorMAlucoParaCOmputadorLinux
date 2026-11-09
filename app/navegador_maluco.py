@@ -337,7 +337,7 @@ class BrowserWindow(Gtk.Window):
         page.webview = None
         placeholder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         placeholder.set_valign(Gtk.Align.CENTER)
-        label = Gtk.Label(label="Aba estacionada para economizar memória.\\nClique para recarregar a página.")
+        label = Gtk.Label(label="Aba estacionada para economizar memória.\nClique para recarregar a página.")
         label.set_justify(Gtk.Justification.CENTER)
         restore = Gtk.Button(label="Restaurar página")
         restore.connect("clicked", lambda *_: self.restore_page(page))
