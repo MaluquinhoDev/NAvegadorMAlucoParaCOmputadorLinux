@@ -550,7 +550,8 @@ class BrowserWindow(Gtk.Window):
         page.show_all()
         return True
 
-    def on_suspend_safety_checked(self, view, result, page):
+    def on_suspend_safety_checked(self, view, result, context):
+        page, candidates = context
         page.suspending = False
         try:
             safe = view.run_javascript_finish(result).get_js_value().to_boolean()
@@ -559,6 +560,32 @@ class BrowserWindow(Gtk.Window):
         if (safe and page is not self.active_page() and page in self.webviews
                 and len(self.webviews) > self._resident_limit):
             self.suspend_page(page)
+        elif len(self.webviews) > self._resident_limit:
+            # Uma aba insegura não pode bloquear a análise das próximas candidatas.
+            self.check_next_suspend_candidate(candidates)
+
+    def check_next_suspend_candidate(self, candidates):
+        safety_script = """(() => {
+          const playing = Array.from(document.querySelectorAll('video,audio'))
+            .some(media => !media.paused && !media.ended);
+          const focused = document.activeElement &&
+            /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+          return !playing && !focused && !window.__nmDirtyForm;
+        })()"""
+        while candidates and len(self.webviews) > self._resident_limit:
+            page = candidates.pop(0)
+            if (page is self.active_page() or page not in self.webviews
+                    or getattr(page, "suspending", False)):
+                continue
+            view = self.webviews.get(page)
+            if not view or view.is_loading():
+                continue
+            page.suspending = True
+            view.run_javascript(
+                safety_script, None, self.on_suspend_safety_checked,
+                (page, candidates)
+            )
+            return
 
     def current_memory_policy(self):
         try:
@@ -589,19 +616,7 @@ class BrowserWindow(Gtk.Window):
         )
         if not candidates:
             return GLib.SOURCE_CONTINUE
-        page = candidates[0]
-        view = self.webviews.get(page)
-        if not view or view.is_loading():
-            return GLib.SOURCE_CONTINUE
-        page.suspending = True
-        safety_script = """(() => {
-          const playing = Array.from(document.querySelectorAll('video,audio'))
-            .some(media => !media.paused && !media.ended);
-          const focused = document.activeElement &&
-            /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-          return !playing && !focused && !window.__nmDirtyForm;
-        })()"""
-        view.run_javascript(safety_script, None, self.on_suspend_safety_checked, page)
+        self.check_next_suspend_candidate(candidates)
         return GLib.SOURCE_CONTINUE
 
     def close_tab_button(self, _button, page):
