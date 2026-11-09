@@ -21,10 +21,10 @@ except ValueError:
     gi.require_version("WebKit2", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
 
-from core import HOME_URL, MAX_TABS, MAX_RESIDENT_TABS, SUSPEND_AFTER_SECONDS, SEARCH_ENGINES, can_create_tab, is_youtube_shorts, normalize_input
+from core import HOME_URL, MAX_TABS, MAX_RESIDENT_TABS, SUSPEND_AFTER_SECONDS, HIGH_PRESSURE_SUSPEND_AFTER_SECONDS, CRITICAL_PRESSURE_SUSPEND_AFTER_SECONDS, SEARCH_ENGINES, can_create_tab, is_youtube_shorts, memory_pressure_level, normalize_input
 
 APP_NAME = "Navegador Maluco"
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 APP_DIR = Path(__file__).resolve().parent
 ASSET_DIR = APP_DIR / "assets"
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "navegador-maluco"
@@ -58,8 +58,13 @@ class BrowserStore:
     def __init__(self):
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(DATA_DIR / "browser.sqlite3")
+        self.db = sqlite3.connect(DATA_DIR / "browser.sqlite3", timeout=1.5)
+        self.db.execute("PRAGMA busy_timeout=1500")
         self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA cache_size=-2048")
+        self.db.execute("PRAGMA temp_store=MEMORY")
+        self._pending_history = []
+        self._history_since_trim = 0
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS favorites(
                 url TEXT PRIMARY KEY, title TEXT NOT NULL, created_at INTEGER NOT NULL
@@ -73,12 +78,46 @@ class BrowserStore:
         self.db.commit()
 
     def add_history(self, url, title):
+        """Enfileira histórico; gravações são agrupadas fora do callback de navegação."""
         if not url or not url.startswith(("http://", "https://")):
             return
-        self.db.execute("INSERT INTO history(url,title,visited_at) VALUES(?,?,strftime('%s','now'))",
-                        (url, title or url))
-        self.db.execute("DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY id DESC LIMIT 5000)")
-        self.db.commit()
+        self._pending_history.append((url, title or url))
+        if len(self._pending_history) > 200:
+            self._pending_history = self._pending_history[-200:]
+
+    def flush_history(self):
+        """Persiste o lote em uma única transação e poda o histórico em blocos."""
+        if not self._pending_history:
+            return 0
+        pending = self._pending_history
+        self._pending_history = []
+        try:
+            for url, title in pending:
+                updated = self.db.execute(
+                    """UPDATE history SET title=?, visited_at=strftime('%s','now')
+                       WHERE id=(SELECT id FROM history WHERE url=?
+                       AND visited_at >= strftime('%s','now') - 30
+                       ORDER BY id DESC LIMIT 1)""",
+                    (title, url)
+                )
+                if updated.rowcount == 0:
+                    self.db.execute(
+                        "INSERT INTO history(url,title,visited_at) VALUES(?,?,strftime('%s','now'))",
+                        (url, title)
+                    )
+                    self._history_since_trim += 1
+            if self._history_since_trim >= 100:
+                self.db.execute(
+                    "DELETE FROM history WHERE id NOT IN "
+                    "(SELECT id FROM history ORDER BY id DESC LIMIT 5000)"
+                )
+                self._history_since_trim = 0
+            self.db.commit()
+            return len(pending)
+        except sqlite3.Error:
+            self.db.rollback()
+            self._pending_history = pending + self._pending_history
+            raise
 
     def search_suggestions(self, query, limit=8):
         """Sugestões locais: favoritos e histórico, sem enviar texto a terceiros."""
@@ -137,6 +176,12 @@ class BrowserWindow(Gtk.Window):
         self._resident_limit = MAX_RESIDENT_TABS
         self._download_context = WebKit2.WebContext.get_default()
         self._suspend_timer = GLib.timeout_add_seconds(45, self.enforce_resident_limit)
+        self._history_timer = GLib.timeout_add_seconds(3, self.flush_history)
+        self._suggestion_source = 0
+        try:
+            self._youtube_focus_script = (ASSET_DIR / "youtube-focus.js").read_text(encoding="utf-8")
+        except OSError:
+            self._youtube_focus_script = ""
         self._download_context.connect("download-started", self.on_download_started)
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -215,7 +260,7 @@ class BrowserWindow(Gtk.Window):
         self.status.set_margin_bottom(4)
         root.pack_start(self.status, False, False, 0)
 
-        self.connect("destroy", Gtk.main_quit)
+        self.connect("destroy", self.on_destroy)
         self.connect("key-press-event", self.on_key_press)
         self.new_tab("about:blank" if os.environ.get("NM_SMOKE_TEST") else HOME_URL)
         self.show_all()
@@ -232,7 +277,32 @@ class BrowserWindow(Gtk.Window):
 
     def save_settings(self):
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        self.config_path.write_text(json.dumps(self.settings, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary = self.config_path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(self.settings, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(self.config_path)
+
+    def flush_history(self):
+        try:
+            self.store.flush_history()
+        except sqlite3.Error as exc:
+            self.status.set_text(f"Histórico temporariamente indisponível: {exc}")
+        return GLib.SOURCE_CONTINUE
+
+    def on_destroy(self, *_args):
+        for source in (getattr(self, "_suspend_timer", 0),
+                       getattr(self, "_history_timer", 0),
+                       getattr(self, "_suggestion_source", 0)):
+            if source:
+                try:
+                    GLib.source_remove(source)
+                except GLib.Error:
+                    pass
+        try:
+            self.store.flush_history()
+            self.store.db.close()
+        except sqlite3.Error:
+            pass
+        Gtk.main_quit()
 
     @staticmethod
     def icon_button(icon, tooltip, callback):
