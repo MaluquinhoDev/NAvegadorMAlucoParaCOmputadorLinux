@@ -264,8 +264,29 @@ class BrowserWindow(Gtk.Window):
 
         self.connect("destroy", self.on_destroy)
         self.connect("key-press-event", self.on_key_press)
-        self.new_tab("about:blank" if os.environ.get("NM_SMOKE_TEST") else HOME_URL)
+        self._startup_page = None
+        startup_view = self.new_tab("about:blank")
+        if not os.environ.get("NM_SMOKE_TEST") and startup_view:
+            self._startup_page = self.active_page()
+            startup_view.load_html("""<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Navegador Maluco</title>
+<style>body{margin:0;background:#f4f6f8;color:#263238;font:16px system-ui,sans-serif;display:grid;min-height:100vh;place-items:center}main{text-align:center;padding:32px}h1{font-size:2rem;margin-bottom:8px}p{color:#607078}</style>
+<main><h1>Navegador Maluco</h1><p>Preparando a página inicial…</p></main></html>""", "about:blank")
         self.show_all()
+
+    def load_initial_homepage(self):
+        """Adia a navegação remota até a janela já ter sido apresentada."""
+        page = self._startup_page
+        if page is None:
+            return GLib.SOURCE_REMOVE
+        self._startup_page = None
+        if (self.notebook.page_num(page) >= 0 and page is self.active_page()
+                and not self.address.get_text().strip()):
+            view = getattr(page, "webview", None)
+            if view:
+                view.load_uri(HOME_URL)
+        return GLib.SOURCE_REMOVE
 
     def load_settings(self):
         data = {"playback_rate": 1.0, "search_engine": "DuckDuckGo", "youtube_focus": dict(FOCUS_DEFAULTS)}
@@ -637,6 +658,7 @@ class BrowserWindow(Gtk.Window):
 
     def on_load_changed(self, view, event, page):
         if event == WebKit2.LoadEvent.STARTED:
+            page.load_started_at = time.monotonic()
             page.url = view.get_uri() or ""
             if page is self.active_page():
                 self.address.set_text(page.url)
@@ -658,10 +680,15 @@ class BrowserWindow(Gtk.Window):
             page.url = url
             page.title = title
             self.store.add_history(url, title)
+            elapsed = max(0.0, time.monotonic() - getattr(page, "load_started_at", time.monotonic()))
             if page is self.active_page():
                 self.address.set_text(url)
                 self.favorite_button.set_label("★" if self.store.is_favorite(url) else "☆")
-                self.status.set_text(title[:160])
+                self.status.set_text(f"Concluído em {elapsed:.1f} s — {title[:120]}")
+                self.status.set_tooltip_text(
+                    "Tempo total observado pelo navegador, da navegação iniciada até o evento FINISHED. "
+                    "Não representa apenas rede nem separa DNS, servidor e renderização."
+                )
                 self.update_loading_ui(view)
                 self.load_progress.set_fraction(1.0)
             self.inject_page_features(view, url)
@@ -1009,6 +1036,8 @@ def main():
     Gtk.init(sys.argv)
     window = BrowserWindow()
     window.show_all()
+    if not os.environ.get("NM_SMOKE_TEST"):
+        GLib.timeout_add(400, window.load_initial_homepage)
     Gtk.main()
 
 
