@@ -296,13 +296,8 @@ class BrowserWindow(Gtk.Window):
                     self.status.set_text("Não foi possível abrir esse endereço fora do navegador.")
                 return True
         elif decision_type == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION:
-            action = decision.get_navigation_action()
-            uri = action.get_request().get_uri()
-            decision.ignore()
-            if uri:
-                new_view = self.new_tab(uri)
-                return True
-            return True
+            # O sinal "create" cria a nova aba e preserva o fluxo de window.open.
+            return False
         return False
 
     def on_load_changed(self, view, event, page):
