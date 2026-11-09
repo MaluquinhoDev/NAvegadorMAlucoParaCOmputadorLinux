@@ -1199,12 +1199,38 @@ class BrowserWindow(Gtk.Window):
 
 
 def main():
+    smoke_test = "--smoke-test" in sys.argv
+    if smoke_test:
+        sys.argv.remove("--smoke-test")
     Gtk.init(sys.argv)
     window = BrowserWindow()
     window.show_all()
     # Prioridade padrão idle: deixa GTK desenhar a janela e processar eventos
     # antes da inicialização potencialmente pesada do WebKitGTK.
     GLib.idle_add(window.initialize_startup_tab)
+
+    if smoke_test:
+        result = {"webview_ready": False}
+
+        def check_startup():
+            if window.active_view() is not None:
+                result["webview_ready"] = True
+                Gtk.main_quit()
+                return GLib.SOURCE_REMOVE
+            return GLib.SOURCE_CONTINUE
+
+        def stop_after_timeout():
+            Gtk.main_quit()
+            return GLib.SOURCE_REMOVE
+
+        GLib.timeout_add(100, check_startup)
+        GLib.timeout_add_seconds(15, stop_after_timeout)
+        Gtk.main()
+        window.destroy()
+        if not result["webview_ready"]:
+            raise SystemExit("WebView não inicializou dentro de 15 segundos.")
+        return
+
     Gtk.main()
 
 
