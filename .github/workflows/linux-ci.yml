@@ -78,3 +78,38 @@ jobs:
           path: dist/navegador-maluco_0.4.3_all.deb
           if-no-files-found: error
           retention-days: 90
+
+  build-native-experimental:
+    name: Experimental Nuitka native build (not release)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GTK, WebKitGTK and compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 python3-venv python3-dev build-essential patchelf xvfb
+
+      - name: Install Nuitka in isolated environment
+        run: |
+          python3 -m venv --system-site-packages .venv-nuitka
+          .venv-nuitka/bin/python -m pip install --upgrade pip
+          .venv-nuitka/bin/python -m pip install "Nuitka>=2.7,<5"
+
+      - name: Compile GTK/WebKitGTK application to native executable
+        run: PYTHON=.venv-nuitka/bin/python bash scripts/build-native.sh
+
+      - name: Smoke-test compiled executable
+        run: timeout 25s xvfb-run -a dist/native/navegador-maluco-native --smoke-test
+
+      - name: Upload experimental native executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: navegador-maluco-native-ubuntu-24.04-experimental
+          path: |
+            dist/native/navegador-maluco-native
+            app/assets/**
+          if-no-files-found: error
+          retention-days: 30
