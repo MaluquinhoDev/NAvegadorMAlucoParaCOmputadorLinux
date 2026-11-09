@@ -21,7 +21,7 @@ jobs:
       - name: Install GTK and WebKitGTK
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 nodejs dpkg-dev zip
+          sudo apt-get install -y python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 nodejs dpkg-dev zip xvfb
 
       - name: Validate Python syntax
         run: python3 -m compileall -q app tests
@@ -29,6 +29,10 @@ jobs:
       - name: Verify GTK and WebKitGTK bindings
         run: |
           /usr/bin/python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1'); from gi.repository import Gtk, WebKit2; print('GTK', Gtk.get_major_version(), 'WebKitGTK bindings loaded')"
+
+      - name: Smoke-test desktop window
+        run: |
+          NM_SMOKE_TEST=1 xvfb-run -a /usr/bin/python3 -c "import sys; sys.path.insert(0, 'app'); from navegador_maluco import BrowserWindow; window = BrowserWindow(); assert window.active_view() is not None; window.destroy(); print('GTK/WebKitGTK browser window created')"
 
       - name: Run unit tests
         run: python3 -m unittest discover -s tests -v
