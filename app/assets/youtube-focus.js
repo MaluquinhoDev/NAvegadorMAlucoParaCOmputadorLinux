@@ -261,8 +261,13 @@
       ].join(",");
       var observer = new MutationObserver(function (records) {
         var relevant = records.some(function (record) {
-          if (record.target && record.target.closest &&
-              record.target.closest("#nm-youtube-tools,#" + styleId)) return false;
+          var target = record.target;
+          if (target && target.nodeType !== 1) target = target.parentElement;
+          if (target && target.closest &&
+              target.closest("#nm-youtube-tools,#" + styleId)) return false;
+          // Conteúdo inserido dentro de uma prateleira/post já existente também
+          // precisa reagendar a filtragem, mesmo que o nó novo seja texto ou span.
+          if (target && target.closest && target.closest(relevantSelectors)) return true;
           return Array.prototype.some.call(record.addedNodes || [], function (node) {
             if (node.nodeType !== 1) return false;
             if (node.id === styleId || node.id === "nm-youtube-tools" ||
