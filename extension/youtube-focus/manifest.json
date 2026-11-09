@@ -1,0 +1,27 @@
+{
+  "manifest_version": 2,
+  "name": "Navegador Maluco — YouTube sem distrações",
+  "version": "1.3.0",
+  "description": "Reduz distrações no YouTube com preferências armazenadas localmente.",
+  "permissions": [
+    "storage"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "youtube-focus@navegadormaluco.local",
+      "strict_min_version": "109.0"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://m.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
