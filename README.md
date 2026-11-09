@@ -69,7 +69,7 @@ Fontes técnicas:
 
 - Aplicativo Linux com janela própria.
 - Motor WebKitGTK integrado, sem exigir Firefox como hospedeiro.
-- Barra de endereço e pesquisa DuckDuckGo.
+- Barra de endereço, pesquisa com DuckDuckGo/Startpage/Google e sugestões locais.
 - Abas múltiplas, com limite de 12.
 - Voltar, avançar, recarregar e página inicial.
 - Favoritos e histórico local em SQLite.
