@@ -15,7 +15,7 @@ A cada atualização aprovada pelo GitHub Actions, o pacote Debian `.deb` é pub
 5. No terminal, entre na pasta extraída e execute:
 
 ```bash
-sudo apt install ./navegador-maluco_0.2.0_all.deb
+sudo apt install ./navegador-maluco_0.3.0_all.deb
 ```
 
 O gerenciador de pacotes instala as dependências GTK/WebKitGTK. Depois, abra **Navegador Maluco** pelo menu de aplicativos ou execute:
@@ -28,9 +28,14 @@ O pacote foi configurado para sistemas Debian/Ubuntu 64 bits, incluindo Linux Mi
 
 ## Otimizações para computadores com pouca memória
 
-A versão 0.2.0 adota um perfil econômico para máquinas com aproximadamente 4 GB de RAM:
+A versão 0.3.0 adota um perfil econômico para máquinas com aproximadamente 4 GB de RAM:
 
 - Limite de 12 abas abertas.
+- Sugestões locais na barra de endereço, combinando histórico, favoritos e abas abertas sem enviar os termos digitados a um serviço externo.
+- Mecanismo de pesquisa selecionável: DuckDuckGo, Startpage ou Google.
+- Indicador estimado de carregamento, botão para interromper navegação e estados de conexão, redirecionamento e recebimento de conteúdo.
+- Localizar texto na página (Ctrl+F) e zoom (Ctrl++, Ctrl+- e Ctrl+0).
+- Pré-carregamento especulativo não é ativado: em 4 GB de RAM, o ganho potencial não justifica o consumo contínuo de memória e rede.
 - Até 3 WebViews residentes como alvo.
 - Estacionamento automático de abas inativas após 3 minutos, quando o motor confirma que não há mídia tocando, campo de formulário focado ou alterações de formulário detectadas.
 - Abas estacionadas mantêm URL e título; ao restaurar, a página é carregada novamente. Estado transitório de aplicações web pode não ser preservado.
@@ -45,7 +50,7 @@ O estacionamento é conservador: a meta de três WebViews residentes pode ser te
 - Aplicativo Linux com janela própria.
 - Motor WebKitGTK integrado, sem exigir Firefox como hospedeiro.
 - Barra de endereço e pesquisa DuckDuckGo.
-- Abas múltiplas, com limite de 30.
+- Abas múltiplas, com limite de 12.
 - Voltar, avançar, recarregar e página inicial.
 - Favoritos e histórico local em SQLite.
 - Downloads na pasta `~/Downloads`.
@@ -81,7 +86,7 @@ Testes e pacote:
 
 ```bash
 python3 -m unittest discover -s tests -v
-APP_VERSION=0.1.0 bash scripts/build-deb.sh
+APP_VERSION=0.3.0 bash scripts/build-deb.sh
 ```
 
 ## Arquitetura e inventário
