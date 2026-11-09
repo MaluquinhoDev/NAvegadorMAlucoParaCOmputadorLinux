@@ -439,6 +439,9 @@ class BrowserWindow(Gtk.Window):
         settings.set_enable_developer_extras(False)
         # Keep WebKit's default on-demand graphics policy. Forcing software or
         # permanent GPU rendering can make this low-power Intel system slower.
+        page.resource_metrics = self.new_resource_metrics()
+        page.resource_started = {}
+        view.connect("resource-load-started", self.on_resource_load_started, page)
         view.connect("load-changed", self.on_load_changed, page)
         view.connect("load-failed", self.on_load_failed, page)
         view.connect("notify::title", self.on_title_changed, page)
@@ -656,9 +659,63 @@ class BrowserWindow(Gtk.Window):
         except (AttributeError, TypeError):
             pass
 
+    @staticmethod
+    def new_resource_metrics():
+        return {
+            "started": 0, "responses": 0, "finished": 0, "failed": 0,
+            "redirects": 0, "bytes": 0, "status_errors": 0,
+            "slowest_ms": 0.0, "total_ms": 0.0,
+        }
+
+    def on_resource_load_started(self, _view, resource, page):
+        """Registra somente tempos e contadores; nunca persiste URLs ou conteúdo."""
+        key = id(resource)
+        page.resource_started[key] = time.monotonic()
+        page.resource_metrics["started"] += 1
+        resource.connect("sent-request", self.on_resource_sent_request, page)
+        resource.connect("received-response", self.on_resource_received_response, page)
+        resource.connect("finished", self.on_resource_finished, page)
+        resource.connect("failed", self.on_resource_failed, page)
+
+    def on_resource_sent_request(self, _resource, _request, redirected_response, page):
+        if redirected_response is not None:
+            page.resource_metrics["redirects"] += 1
+
+    def on_resource_received_response(self, _resource, response, page):
+        metrics = page.resource_metrics
+        metrics["responses"] += 1
+        try:
+            status = int(response.get_status_code())
+            if status >= 400:
+                metrics["status_errors"] += 1
+        except (AttributeError, TypeError, ValueError):
+            pass
+        try:
+            length = int(response.get_content_length())
+            if length > 0:
+                metrics["bytes"] += length
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+    def on_resource_finished(self, resource, page):
+        started = page.resource_started.pop(id(resource), None)
+        if started is None:
+            return
+        elapsed_ms = max(0.0, (time.monotonic() - started) * 1000)
+        metrics = page.resource_metrics
+        metrics["finished"] += 1
+        metrics["total_ms"] += elapsed_ms
+        metrics["slowest_ms"] = max(metrics["slowest_ms"], elapsed_ms)
+
+    def on_resource_failed(self, resource, _error, page):
+        page.resource_started.pop(id(resource), None)
+        page.resource_metrics["failed"] += 1
+
     def on_load_changed(self, view, event, page):
         if event == WebKit2.LoadEvent.STARTED:
             page.load_started_at = time.monotonic()
+            page.resource_metrics = self.new_resource_metrics()
+            page.resource_started = {}
             page.url = view.get_uri() or ""
             if page is self.active_page():
                 self.address.set_text(page.url)
@@ -737,11 +794,19 @@ class BrowserWindow(Gtk.Window):
         details = " · ".join(f"{name} {value:.0f} ms" for name, value in labels if value is not None)
         resources = metrics.get("resource_count", 0)
         transfer = metrics.get("transfer_bytes", 0)
+        resource = getattr(page, "resource_metrics", self.new_resource_metrics())
+        completed = resource["finished"]
+        average_ms = resource["total_ms"] / completed if completed else 0.0
         self.status.set_tooltip_text(
-            f"Tempos da Navigation Timing API: {details}. "
-            f"Recursos observáveis: {resources}; transferência observável: {transfer} bytes. "
-            "Métricas de recursos cross-origin podem ser limitadas por Timing-Allow-Origin; "
-            "valores ausentes ou zero não significam necessariamente ausência de latência."
+            f"Navigation Timing: {details}. Recursos: {resources}; "
+            f"bytes via Resource Timing: {transfer}. "
+            f"WebKit: {resource['started']} iniciados, {completed} concluídos, "
+            f"{resource['failed']} falhas, {resource['status_errors']} respostas HTTP >= 400, "
+            f"{resource['redirects']} redirecionamentos, {resource['bytes']} bytes informados. "
+            f"Duração média: {average_ms:.0f} ms; maior: {resource['slowest_ms']:.0f} ms. "
+            "Os bytes por resposta podem ser estimados e não equivalem ao tráfego real; "
+            "valores cross-origin da Resource Timing API podem ser limitados. "
+            "Nenhuma URL, consulta de pesquisa ou conteúdo é armazenado."
         )
 
     def inject_page_features(self, view, url):
