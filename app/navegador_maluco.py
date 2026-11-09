@@ -511,9 +511,23 @@ class BrowserWindow(Gtk.Window):
         if safe and page is not self.active_page() and page in self.webviews:
             self.suspend_page(page)
 
+    def current_memory_policy(self):
+        try:
+            meminfo = Path("/proc/meminfo").read_text(encoding="ascii")
+            pressure = Path("/proc/pressure/memory").read_text(encoding="ascii")
+            level = memory_pressure_level(meminfo, pressure)
+        except OSError:
+            level = "normal"
+        if level == "critical":
+            return 1, CRITICAL_PRESSURE_SUSPEND_AFTER_SECONDS, level
+        if level == "high":
+            return 2, HIGH_PRESSURE_SUSPEND_AFTER_SECONDS, level
+        return MAX_RESIDENT_TABS, SUSPEND_AFTER_SECONDS, level
+
     def enforce_resident_limit(self):
         if not hasattr(self, "webviews"):
             return GLib.SOURCE_REMOVE
+        self._resident_limit, idle_threshold, pressure_level = self.current_memory_policy()
         if len(self.webviews) <= self._resident_limit:
             return GLib.SOURCE_CONTINUE
         now = time.monotonic()
@@ -521,7 +535,7 @@ class BrowserWindow(Gtk.Window):
             (page for page in self.webviews
              if page is not self.active_page()
              and not getattr(page, "suspending", False)
-             and now - getattr(page, "last_active", now) >= SUSPEND_AFTER_SECONDS),
+             and now - getattr(page, "last_active", now) >= idle_threshold),
             key=lambda page: getattr(page, "last_active", 0)
         )
         if not candidates:
