@@ -26,7 +26,7 @@ jobs:
       - name: Validate Python and shell syntax
         run: |
           python3 -m compileall -q app tests
-          bash -n scripts/build-deb.sh scripts/build-native.sh scripts/diagnose-performance.sh
+          bash -n scripts/build-deb.sh scripts/build-native.sh scripts/build-native-deb.sh scripts/diagnose-performance.sh
 
       - name: Verify GTK and WebKitGTK bindings
         run: |
