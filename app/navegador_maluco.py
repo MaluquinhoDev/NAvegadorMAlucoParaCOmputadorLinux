@@ -334,6 +334,7 @@ class BrowserWindow(Gtk.Window):
         self.webviews.pop(page, None)
         page.remove(view)
         view.destroy()
+        page.webview = None
         placeholder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         placeholder.set_valign(Gtk.Align.CENTER)
         label = Gtk.Label(label="Aba estacionada para economizar memória.\\nClique para recarregar a página.")
@@ -532,7 +533,6 @@ class BrowserWindow(Gtk.Window):
         self.address.set_text(url)
         self.favorite_button.set_label("★" if self.store.is_favorite(url) else "☆")
         self.status.set_text(view.get_title() or "Pronto")
-        GLib.timeout_add_seconds(45, self.enforce_resident_limit)
 
     def on_address_activate(self, entry):
         try:
