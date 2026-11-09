@@ -38,3 +38,20 @@ A versão compilada só deve substituir a versão Python depois de:
 5. funcionar com a versão de Python, GTK e WebKitGTK disponível no Mint de destino.
 
 O workflow publica o binário como artefato experimental separado. O pacote Debian padrão permanece inalterado até que esses critérios sejam comprovados.
+
+
+## Pacote Debian nativo
+
+A trilha atual gera um segundo pacote, `navegador-maluco-native`, a partir do mesmo executável Nuitka que passa pelo smoke test. Isso elimina a diferença anterior em que o artefato nativo era apenas um arquivo separado e o .deb instalava o código Python.
+
+O pacote nativo usa o modo `accelerated`: o código Python acompanhado pelo Nuitka é compilado, mas o runtime CPython, PyGObject, GTK3 e WebKitGTK continuam sendo dependências do sistema. Por isso o pacote é `amd64` e está associado ao ambiente Ubuntu 24.04 usado no build; o alvo inicial é Linux Mint 22.x. A versão Python continua publicada como fallback e referência.
+
+A CI agora:
+1. compila o executável;
+2. executa o smoke test direto;
+3. monta o .deb nativo com assets, launcher e entrada de menu próprios;
+4. instala o .deb no runner;
+5. executa o smoke test pelo comando instalado;
+6. publica o .deb nativo e o executável bruto como artefatos distintos.
+
+O pacote nativo não substitui automaticamente o Python. A promoção exige teste no Mint real e benchmark A/B com mesmas páginas, perfil e condições. O modo `standalone` permanece uma linha experimental separada: ele empacota runtime e dependências Python, mas não deve ser adotado sem validar os bindings dinâmicos PyGObject/GObject Introspection e as bibliotecas GTK/WebKitGTK do sistema.
