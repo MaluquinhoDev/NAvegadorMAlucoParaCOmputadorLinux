@@ -21,7 +21,7 @@ jobs:
       - name: Install GTK and WebKitGTK
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 nodejs dpkg-dev
+          sudo apt-get install -y python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 nodejs dpkg-dev zip
 
       - name: Validate Python syntax
         run: python3 -m compileall -q app tests
