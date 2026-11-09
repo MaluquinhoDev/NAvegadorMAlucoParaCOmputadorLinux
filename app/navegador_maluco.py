@@ -752,10 +752,20 @@ class BrowserWindow(Gtk.Window):
         return key.casefold() in candidate.casefold()
 
     def on_address_changed(self, entry):
-        query = entry.get_text().strip()
-        self.address_model.clear()
-        if len(query) < 2:
+        if getattr(self, "_selecting_suggestion", False):
             return
+        self.address_model.clear()
+        if self._suggestion_source:
+            GLib.source_remove(self._suggestion_source)
+            self._suggestion_source = 0
+        if len(entry.get_text().strip()) >= 2:
+            self._suggestion_source = GLib.timeout_add(180, self.update_address_suggestions, entry)
+
+    def update_address_suggestions(self, entry):
+        self._suggestion_source = 0
+        query = entry.get_text().strip()
+        if len(query) < 2 or entry is not self.address:
+            return GLib.SOURCE_REMOVE
         rows = self.store.search_suggestions(query, limit=8)
         for page in self.webviews:
             url = getattr(page, "url", "")
@@ -769,10 +779,13 @@ class BrowserWindow(Gtk.Window):
                 seen.add(url)
             if len(seen) >= 8:
                 break
+        return GLib.SOURCE_REMOVE
 
     def on_address_suggestion_selected(self, _completion, model, tree_iter):
         target = model.get_value(tree_iter, 1)
+        self._selecting_suggestion = True
         self.address.set_text(target)
+        self._selecting_suggestion = False
         self.navigate_to(target)
         return True
 
