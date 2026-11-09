@@ -250,16 +250,29 @@
     document.addEventListener("yt-page-data-updated", scheduleApply, true);
     window.addEventListener("popstate", scheduleApply, true);
     if (document.documentElement && window.MutationObserver) {
+      var relevantSelectors = [
+        "ytd-shelf-renderer", "ytd-horizontal-card-list-renderer",
+        "ytd-search-pyv-renderer", "ytd-guide-section-renderer",
+        "ytd-backstage-post-renderer", "ytm-backstage-post-renderer",
+        "ytd-radio-renderer", "ytd-compact-radio-renderer",
+        "ytd-reel-shelf-renderer", "ytd-reel-item-renderer",
+        "ytd-rich-item-renderer", "ytd-rich-section-renderer",
+        "ytd-watch-flexy", "ytd-comments"
+      ].join(",");
       var observer = new MutationObserver(function (records) {
         var relevant = records.some(function (record) {
           if (record.target && record.target.closest &&
               record.target.closest("#nm-youtube-tools,#" + styleId)) return false;
           return Array.prototype.some.call(record.addedNodes || [], function (node) {
-            return !(node.nodeType === 1 &&
-              (node.id === styleId || node.id === "nm-youtube-tools" ||
-               (node.closest && node.closest("#nm-youtube-tools"))));
-          }) || record.removedNodes.length > 0;
+            if (node.nodeType !== 1) return false;
+            if (node.id === styleId || node.id === "nm-youtube-tools" ||
+                (node.closest && node.closest("#nm-youtube-tools"))) return false;
+            return (node.matches && node.matches(relevantSelectors)) ||
+              (node.querySelector && node.querySelector(relevantSelectors));
+          });
         });
+        // Removed nodes cannot introduce new content that needs hiding. Ignoring
+        // removals avoids repeatedly scanning the entire YouTube document.
         if (relevant) scheduleApply();
       });
       observer.observe(document.documentElement, { childList: true, subtree: true });
