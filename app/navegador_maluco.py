@@ -510,7 +510,8 @@ class BrowserWindow(Gtk.Window):
             safe = view.run_javascript_finish(result).get_js_value().to_boolean()
         except (GLib.Error, AttributeError, TypeError):
             safe = False
-        if safe and page is not self.active_page() and page in self.webviews:
+        if (safe and page is not self.active_page() and page in self.webviews
+                and len(self.webviews) > self._resident_limit):
             self.suspend_page(page)
 
     def current_memory_policy(self):
