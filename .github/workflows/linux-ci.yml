@@ -32,7 +32,7 @@ jobs:
 
       - name: Smoke-test desktop window
         run: |
-          NM_SMOKE_TEST=1 xvfb-run -a /usr/bin/python3 -c "import sys; sys.path.insert(0, 'app'); from navegador_maluco import BrowserWindow; window = BrowserWindow(); assert window.active_view() is not None; window.destroy(); print('GTK/WebKitGTK browser window created')"
+          NM_SMOKE_TEST=1 xvfb-run -a /usr/bin/python3 -c "import sys; sys.path.insert(0, 'app'); from gi.repository import Gtk; Gtk.init([]); from navegador_maluco import BrowserWindow; window = BrowserWindow(); assert window.active_view() is not None; window.destroy(); print('GTK/WebKitGTK browser window created')"
 
       - name: Run unit tests
         run: python3 -m unittest discover -s tests -v
