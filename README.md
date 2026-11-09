@@ -1,56 +1,78 @@
 # Navegador Maluco — Linux
 
-Portabilidade do projeto [NavegadorMaluco](https://github.com/MaluquinhoDev/NavegadorMaluco) para computadores Linux, com prioridade para Linux Mint e hardware de baixo consumo.
+Portabilidade **integral** do aplicativo Android [NavegadorMaluco](https://github.com/MaluquinhoDev/NavegadorMaluco) para um navegador desktop no Linux Mint.
 
-> **Estado atual:** planejamento técnico e primeira base da extensão Firefox. Isto ainda não é um navegador independente nem uma migração completa do aplicativo Android.
+> **Escopo:** recriar o navegador completo, preservando sua identidade, interface e conjunto de recursos. A extensão Firefox existente é apenas um protótipo técnico de reaproveitamento de uma funcionalidade; não representa o produto final.
 
-## Objetivo
+## Objetivo do projeto
 
-Levar os recursos mais úteis do Navegador Maluco para o desktop sem obrigar um computador modesto a executar outro navegador completo em paralelo.
+Construir um aplicativo de navegação próprio para Linux, com janela e interface próprias, gerenciamento de abas e sessões, ferramentas de estudo, bloqueios, extensões, reprodução de mídia e tradução de páginas. O Firefox instalado no sistema não será a interface final nem um requisito para usar o Navegador Maluco.
 
-A primeira plataforma-alvo é **Firefox no Linux Mint**. O Firefox fornece o motor de navegação; o projeto fornece a camada de foco e personalização.
+O projeto deve manter paridade funcional com o aplicativo Android sempre que houver equivalente tecnicamente viável no desktop. Recursos dependentes de APIs Android serão reimplementados com APIs Linux/WebKit ou substitutos documentados, e não simplesmente removidos.
 
 ## Hardware de referência
 
-- Intel Celeron N3060 (2 núcleos / 2 threads, baixo consumo)
-- 4 GB de RAM
-- Linux Mint 64 bits
+- Linux Mint 64 bits.
+- Intel Celeron N3060, 2 núcleos.
+- 4 GB de RAM.
 
-As decisões iniciais priorizam poucos processos, baixo consumo de memória, ausência de serviços residentes e processamento local.
+O consumo de memória, CPU e armazenamento é requisito arquitetural. O navegador deve evitar processos e serviços residentes desnecessários, limitar abas residentes e permitir descarregar/estacionar abas inativas.
 
-## O que existe neste repositório
+## Arquitetura-alvo em avaliação
 
-- `extension/youtube-focus/`: primeira adaptação da extensão YouTube sem distrações.
-- `docs/PORTING_PLAN.md`: plano de migração por etapas.
-- `docs/ARCHITECTURE.md`: arquitetura desktop e limites da migração.
-- `scripts/check-extension.sh`: validação estática local.
-- `.github/workflows/linux-ci.yml`: validação e empacotamento automático no GitHub Actions.
+A direção arquitetural passa a ser um aplicativo desktop próprio baseado em **Tauri + WebKitGTK**, sujeito a uma prova de conceito de desempenho e compatibilidade no Linux Mint. Essa opção permite janela, menus, armazenamento e integração nativos sem embutir uma distribuição Chromium como o Electron.
 
-## Instalação de desenvolvimento
+A arquitetura não está declarada como validada: WebKitGTK possui diferenças de compatibilidade em relação ao Android WebView/Chromium e ao GeckoView. O motor, a versão mínima do Linux Mint e o empacotamento só serão fixados após testes reproduzíveis. A extensão Firefox deste repositório permanece como laboratório de reaproveitamento de JavaScript, não como destino final.
 
-1. Abra `about:debugging` no Firefox.
-2. Selecione **Este Firefox**.
-3. Clique em **Carregar extensão temporária**.
-4. Selecione `extension/youtube-focus/manifest.json`.
+## Funcionalidades a portar
 
-A extensão temporária permanece instalada até o Firefox ser reiniciado. O pacote ZIP é produzido pelo GitHub Actions como artefato de CI; ainda não é uma extensão assinada/publicada no AMO.
+O inventário inicial está em [docs/FEATURE_PARITY.md](docs/FEATURE_PARITY.md). Inclui, entre outros:
 
-## Verificação local
+- Navegação, barra de endereço/pesquisa, histórico, downloads e múltiplas abas.
+- Abas estacionadas, fixadas e organizadas em constelações.
+- Perfis e isolamento de dados de navegação, dentro dos limites do motor escolhido.
+- Gerenciador de extensões locais e API compatível com o formato já usado pelo projeto.
+- Bloqueadores e controles de privacidade.
+- YouTube sem distrações, incluindo preferências detalhadas e ferramentas de estudo.
+- Biblioteca/fila de vídeos, marcações de tempo, anotações e temporizador.
+- Velocidade de reprodução, controles de mídia e modos de reprodução em janela.
+- Tradução de páginas com identificação de idioma, cache e restauração do texto original.
+- Ferramentas de atenção, sessão e recompensas.
+- Diagnóstico de compatibilidade de login/cookies sem registrar credenciais ou tokens.
 
-Requisitos: Bash, Node.js e `zip`.
+O inventário é baseado no código e na documentação disponíveis no repositório Android de origem. Cada item deve receber estado de implementação e teste; não se considera concluído apenas por existir uma tela.
 
-```bash
-bash scripts/check-extension.sh
-```
+## Estado real deste repositório
 
-## Limites conhecidos
+- [x] Diagnóstico inicial do projeto Android.
+- [x] Protótipo de extensão Firefox para testar o reaproveitamento de um content script.
+- [x] Validação estática e empacotamento da extensão no GitHub Actions.
+- [x] Escopo corrigido para migração integral do navegador.
+- [ ] Prova de conceito do aplicativo desktop próprio.
+- [ ] Migração da interface e do núcleo de navegação.
+- [ ] Paridade funcional com o aplicativo Android.
+- [ ] Testes de instalação, estabilidade, compatibilidade e desempenho no Linux Mint.
 
-- O motor Android WebView/GeckoView não pode ser reutilizado diretamente como aplicativo Linux.
-- A extensão atual é um primeiro recorte funcional: YouTube sem distrações.
-- A interface de configurações, bloqueio de outros domínios, biblioteca sincronizada e tradução de páginas ainda não foram migrados.
-- A compatibilidade dos seletores do YouTube precisa de testes contínuos, pois a interface do site muda com frequência.
-- Não há promessa de desempenho absoluto: o consumo total também depende das abas, vídeos e extensões abertas no Firefox.
+**Não existe ainda um navegador desktop completo neste repositório.** A CI da extensão comprova apenas validação estática e empacotamento daquele protótipo; não comprova a execução do navegador completo.
 
-## Projeto de origem
+## Estrutura
 
-O aplicativo Android original permanece separado: [MaluquinhoDev/NavegadorMaluco](https://github.com/MaluquinhoDev/NavegadorMaluco).
+- `extension/youtube-focus/`: protótipo isolado de extensão Firefox.
+- `docs/FEATURE_PARITY.md`: inventário de recursos Android e matriz de paridade desktop.
+- `docs/PORTING_PLAN.md`: plano de migração integral.
+- `docs/ARCHITECTURE.md`: arquitetura desktop e decisões técnicas.
+- `scripts/` e `.github/workflows/`: validação do protótipo de extensão.
+
+## Princípios de migração
+
+1. Não reduzir o projeto a uma extensão.
+2. Não remover funcionalidades silenciosamente: registrar equivalências, limitações e decisões.
+3. Separar lógica de negócio de APIs específicas do Android.
+4. Preservar dados e preferências sempre que houver formato de migração seguro.
+5. Priorizar processamento local e privacidade por padrão.
+6. Medir desempenho no hardware de referência; não inventar metas ou resultados.
+7. Manter testes de regressão para cada recurso migrado.
+
+## Projeto original
+
+[ M a l u q u i n h o D e v / N a v e g a d o r M a l u c o ](https://github.com/MaluquinhoDev/NavegadorMaluco)
