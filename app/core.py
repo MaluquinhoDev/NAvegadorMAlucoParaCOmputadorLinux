@@ -10,6 +10,8 @@ SEARCH_ENGINES = {
 MAX_TABS = 12
 MAX_RESIDENT_TABS = 3
 SUSPEND_AFTER_SECONDS = 180
+HIGH_PRESSURE_SUSPEND_AFTER_SECONDS = 120
+CRITICAL_PRESSURE_SUSPEND_AFTER_SECONDS = 90
 
 
 def search_url(value: str, search_engine: str = "DuckDuckGo") -> str:
@@ -34,6 +36,39 @@ def normalize_input(value: str, search_engine: str = "DuckDuckGo") -> str:
         if parsed.netloc and "." in parsed.netloc:
             return candidate
     return search_url(value, search_engine)
+
+
+
+def memory_pressure_level(meminfo_text: str, psi_text: str) -> str:
+    """Classifica pressão de memória com MemAvailable + PSI; falha fechada em normal."""
+    available_kb = None
+    some_avg10 = 0.0
+    full_avg10 = 0.0
+    try:
+        for line in (meminfo_text or "").splitlines():
+            if line.startswith("MemAvailable:"):
+                available_kb = int(line.split()[1])
+                break
+        for line in (psi_text or "").splitlines():
+            fields = line.split()
+            if not fields:
+                continue
+            values = {item.split("=", 1)[0]: item.split("=", 1)[1]
+                      for item in fields[1:] if "=" in item}
+            if fields[0] == "some":
+                some_avg10 = float(values.get("avg10", 0))
+            elif fields[0] == "full":
+                full_avg10 = float(values.get("avg10", 0))
+    except (ValueError, IndexError, TypeError):
+        return "normal"
+
+    if available_kb is None:
+        return "normal"
+    if available_kb < 384 * 1024 and full_avg10 >= 1.0:
+        return "critical"
+    if available_kb < 512 * 1024 and some_avg10 >= 2.0:
+        return "high"
+    return "normal"
 
 
 def can_create_tab(count: int) -> bool:
