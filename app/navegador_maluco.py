@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 import webbrowser
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,10 +21,10 @@ except ValueError:
     gi.require_version("WebKit2", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
 
-from core import HOME_URL, MAX_TABS, can_create_tab, is_youtube_shorts, normalize_input
+from core import HOME_URL, MAX_TABS, MAX_RESIDENT_TABS, SUSPEND_AFTER_SECONDS, can_create_tab, is_youtube_shorts, normalize_input
 
 APP_NAME = "Navegador Maluco"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 APP_DIR = Path(__file__).resolve().parent
 ASSET_DIR = APP_DIR / "assets"
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "navegador-maluco"
@@ -110,7 +111,9 @@ class BrowserWindow(Gtk.Window):
         self.config_path = CONFIG_DIR / "settings.json"
         self.settings = self.load_settings()
         self.webviews = {}
+        self._resident_limit = MAX_RESIDENT_TABS
         self._download_context = WebKit2.WebContext.get_default()
+        self._suspend_timer = GLib.timeout_add_seconds(45, self.enforce_resident_limit)
         self._download_context.connect("download-started", self.on_download_started)
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -250,19 +253,19 @@ class BrowserWindow(Gtk.Window):
         page = self.active_page()
         return getattr(page, "webview", None)
 
-    def new_tab(self, url="about:blank"):
-        if not can_create_tab(self.notebook.get_n_pages()):
-            self.status.set_text(f"Limite de {MAX_TABS} abas atingido.")
-            return None
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    def create_webview(self, page, url):
         view = WebKit2.WebView.new_with_context(self._download_context)
         page.webview = view
-        page.url = url
+        page.url = url or "about:blank"
+        page.is_suspended = False
+        page.suspending = False
         settings = view.get_settings()
         settings.set_enable_javascript(True)
         settings.set_enable_html5_database(True)
         settings.set_enable_html5_local_storage(True)
         settings.set_enable_developer_extras(False)
+        # Keep WebKit's default on-demand graphics policy. Forcing software or
+        # permanent GPU rendering can make this low-power Intel system slower.
         view.connect("load-changed", self.on_load_changed, page)
         view.connect("load-failed", self.on_load_failed, page)
         view.connect("notify::title", self.on_title_changed, page)
@@ -270,7 +273,19 @@ class BrowserWindow(Gtk.Window):
         view.connect("create", self.on_create_webview)
         view.connect("web-process-terminated", self.on_web_process_terminated, page)
         page.pack_start(view, True, True, 0)
+        self.webviews[page] = view
+        return view
 
+    def new_tab(self, url="about:blank"):
+        if not can_create_tab(self.notebook.get_n_pages()):
+            self.status.set_text(f"Limite de {MAX_TABS} abas atingido no modo econômico.")
+            return None
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        page.url = url
+        page.title = "Nova aba"
+        page.last_active = time.monotonic()
+        page.is_suspended = False
+        page.suspending = False
         tab_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
         label = Gtk.Label(label="Nova aba")
         close = Gtk.Button.new_from_icon_name("window-close", Gtk.IconSize.MENU)
@@ -285,7 +300,7 @@ class BrowserWindow(Gtk.Window):
         self.notebook.append_page(page, tab_box)
         self.notebook.set_tab_reorderable(page, True)
         self.notebook.set_current_page(self.notebook.page_num(page))
-        self.webviews[page] = view
+        view = self.create_webview(page, url)
         page.show_all()
         if url and url != "about:blank":
             view.load_uri(url)
@@ -294,13 +309,94 @@ class BrowserWindow(Gtk.Window):
             self.address.grab_focus()
         return view
 
+    def restore_page(self, page):
+        if not getattr(page, "is_suspended", False):
+            return getattr(page, "webview", None)
+        for child in page.get_children():
+            page.remove(child)
+            child.destroy()
+        url = getattr(page, "url", "about:blank")
+        view = self.create_webview(page, url)
+        page.is_suspended = False
+        page.last_active = time.monotonic()
+        page.show_all()
+        if url and url != "about:blank":
+            view.load_uri(url)
+        return view
+
+    def suspend_page(self, page):
+        view = getattr(page, "webview", None)
+        if not view or page is self.active_page():
+            return False
+        page.url = view.get_uri() or getattr(page, "url", "about:blank")
+        page.title = view.get_title() or getattr(page, "title", "Aba estacionada")
+        view.stop_loading()
+        self.webviews.pop(page, None)
+        page.remove(view)
+        view.destroy()
+        placeholder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        placeholder.set_valign(Gtk.Align.CENTER)
+        label = Gtk.Label(label="Aba estacionada para economizar memória.\\nClique para recarregar a página.")
+        label.set_justify(Gtk.Justification.CENTER)
+        restore = Gtk.Button(label="Restaurar página")
+        restore.connect("clicked", lambda *_: self.restore_page(page))
+        placeholder.pack_start(label, False, False, 0)
+        placeholder.pack_start(restore, False, False, 0)
+        page.pack_start(placeholder, True, True, 0)
+        page.is_suspended = True
+        page.suspending = False
+        page.tab_label.set_text((page.title or "Aba estacionada")[:34] + " ·")
+        page.show_all()
+        return True
+
+    def on_suspend_safety_checked(self, view, result, page):
+        page.suspending = False
+        try:
+            safe = view.run_javascript_finish(result).get_js_value().to_boolean()
+        except (GLib.Error, AttributeError, TypeError):
+            safe = False
+        if safe and page is not self.active_page() and page in self.webviews:
+            self.suspend_page(page)
+
+    def enforce_resident_limit(self):
+        if not hasattr(self, "webviews"):
+            return GLib.SOURCE_REMOVE
+        if len(self.webviews) <= self._resident_limit:
+            return GLib.SOURCE_CONTINUE
+        now = time.monotonic()
+        candidates = sorted(
+            (page for page in self.webviews
+             if page is not self.active_page()
+             and not getattr(page, "suspending", False)
+             and now - getattr(page, "last_active", now) >= SUSPEND_AFTER_SECONDS),
+            key=lambda page: getattr(page, "last_active", 0)
+        )
+        if not candidates:
+            return GLib.SOURCE_CONTINUE
+        page = candidates[0]
+        view = self.webviews.get(page)
+        if not view or view.is_loading():
+            return GLib.SOURCE_CONTINUE
+        page.suspending = True
+        safety_script = """(() => {
+          const playing = Array.from(document.querySelectorAll('video,audio'))
+            .some(media => !media.paused && !media.ended);
+          const focused = document.activeElement &&
+            /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+          return !playing && !focused && !window.__nmDirtyForm;
+        })()"""
+        view.run_javascript(safety_script, None, self.on_suspend_safety_checked, page)
+        return GLib.SOURCE_CONTINUE
+
     def close_tab_button(self, _button, page):
         index = self.notebook.page_num(page)
         if index >= 0:
-            view = page.webview
-            view.stop_loading()
-            view.destroy()
-            self.webviews.pop(page, None)
+            view = getattr(page, "webview", None)
+            if view:
+                view.stop_loading()
+                self.webviews.pop(page, None)
+                page.remove(view)
+                view.destroy()
             self.notebook.remove_page(index)
         if self.notebook.get_n_pages() == 0:
             self.new_tab(HOME_URL)
@@ -345,6 +441,7 @@ class BrowserWindow(Gtk.Window):
             url = view.get_uri() or ""
             title = view.get_title() or url
             page.url = url
+            page.title = title
             self.store.add_history(url, title)
             if page is self.active_page():
                 self.address.set_text(url)
@@ -374,6 +471,15 @@ class BrowserWindow(Gtk.Window):
         })();
         """.replace("RATE", str(rate))
         try:
+            view.run_javascript("""
+                (() => {
+                  if (window.__nmDirtyTrackingInstalled) return;
+                  window.__nmDirtyTrackingInstalled = true;
+                  window.__nmDirtyForm = false;
+                  document.addEventListener('input', () => { window.__nmDirtyForm = true; }, true);
+                  document.addEventListener('change', () => { window.__nmDirtyForm = true; }, true);
+                })();
+                """, None, None, None)
             view.run_javascript(media_script, None, None, None)
             if urlparse(url).hostname in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
                 script_path = ASSET_DIR / "youtube-focus.js"
@@ -411,15 +517,22 @@ class BrowserWindow(Gtk.Window):
 
     def on_title_changed(self, view, _param, page):
         title = view.get_title() or "Nova aba"
+        page.title = title
+        page.url = view.get_uri() or getattr(page, "url", "")
         page.tab_label.set_text(title[:34])
 
     def on_switch_page(self, _notebook, page, _number):
         if not page:
             return
-        self.address.set_text(page.webview.get_uri() or "")
-        url = page.webview.get_uri() or ""
+        view = self.restore_page(page) if getattr(page, "is_suspended", False) else getattr(page, "webview", None)
+        page.last_active = time.monotonic()
+        if not view:
+            return
+        url = view.get_uri() or getattr(page, "url", "")
+        self.address.set_text(url)
         self.favorite_button.set_label("★" if self.store.is_favorite(url) else "☆")
-        self.status.set_text(page.webview.get_title() or "Pronto")
+        self.status.set_text(view.get_title() or "Pronto")
+        GLib.timeout_add_seconds(45, self.enforce_resident_limit)
 
     def on_address_activate(self, entry):
         try:
