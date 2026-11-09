@@ -282,7 +282,7 @@ class BrowserWindow(Gtk.Window):
             return GLib.SOURCE_REMOVE
         self._startup_page = None
         if (self.notebook.page_num(page) >= 0 and page is self.active_page()
-                and not self.address.get_text().strip()):
+                and self.address.get_text().strip() in ("", "about:blank")):
             view = getattr(page, "webview", None)
             if view:
                 view.load_uri(HOME_URL)
