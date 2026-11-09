@@ -1,6 +1,6 @@
 import unittest
 
-from app.core import HOME_URL, MAX_RESIDENT_TABS, MAX_TABS, SUSPEND_AFTER_SECONDS, can_create_tab, is_youtube_shorts, memory_pressure_level, normalize_input, search_url
+from app.core import HOME_URL, HIGH_PRESSURE_SUSPEND_AFTER_SECONDS, CRITICAL_PRESSURE_SUSPEND_AFTER_SECONDS, MAX_RESIDENT_TABS, MAX_TABS, SUSPEND_AFTER_SECONDS, can_create_tab, is_youtube_shorts, memory_pressure_level, normalize_input, search_url
 
 
 class BrowserCoreTests(unittest.TestCase):
@@ -28,6 +28,8 @@ class BrowserCoreTests(unittest.TestCase):
         self.assertEqual(MAX_TABS, 12)
         self.assertEqual(MAX_RESIDENT_TABS, 3)
         self.assertEqual(SUSPEND_AFTER_SECONDS, 180)
+        self.assertEqual(HIGH_PRESSURE_SUSPEND_AFTER_SECONDS, 120)
+        self.assertEqual(CRITICAL_PRESSURE_SUSPEND_AFTER_SECONDS, 90)
         self.assertTrue(can_create_tab(MAX_TABS - 1))
         self.assertFalse(can_create_tab(MAX_TABS))
 
