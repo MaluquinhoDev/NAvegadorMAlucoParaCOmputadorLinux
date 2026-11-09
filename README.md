@@ -45,6 +45,26 @@ A versão 0.3.0 adota um perfil econômico para máquinas com aproximadamente 4 
 
 O estacionamento é conservador: a meta de três WebViews residentes pode ser temporariamente excedida quando as abas restantes estão ocupadas ou não podem ser estacionadas com segurança.
 
+## Pesquisa comparativa de navegadores Linux
+
+| Navegador | Abordagem observada | Decisão aplicada ao Navegador Maluco |
+|---|---|---|
+| Firefox | Barra inteligente que reúne histórico, favoritos, abas abertas e sugestões de pesquisa; descarregamento de abas sob pressão de memória. | Adotadas sugestões locais e gestão conservadora de abas residentes. |
+| Chromium | Pré-renderização de páginas prováveis para navegação quase instantânea, com custo adicional de memória e rede. | Não ativada por padrão: o custo especulativo é inadequado ao perfil de 4 GB. |
+| GNOME Web | Navegador GTK baseado em WebKitGTK, próximo da arquitetura usada neste projeto. | Referência de integração GTK/WebKitGTK, sem trocar o motor. |
+| Falkon | Navegador gráfico baseado em Chromium, listado entre as opções Linux. | Referência de navegador leve, mas sem copiar recursos que aumentem dependências ou consumo. |
+| qutebrowser | Navegação orientada ao teclado. | Atalhos de localizar e zoom foram incorporados; o restante do modelo modal não foi adotado. |
+
+A implementação 0.3.0 combina sugestões privadas locais, seleção de mecanismo de pesquisa, progresso de carregamento, interrupção de navegação, localizar na página e controle de zoom. O indicador usa a estimativa fornecida pelo WebKitGTK; não representa uma medição exata do tempo restante.
+
+Fontes técnicas:
+- [Mozilla — arquitetura da barra de endereço](https://firefox-source-docs.mozilla.org/browser/urlbar/index.html)
+- [Mozilla — descarregamento de abas sob pressão de memória](https://gecko-docs.mozilla.org/browser/components/tabbrowser/docs/tab-unloading.html)
+- [Chrome — pré-renderização e seus custos](https://developer.chrome.com/docs/web-platform/prerender-pages)
+- [WebKitGTK — progresso estimado de carregamento](https://webkitgtk.org/reference/webkit2gtk/stable/class.WebView.html)
+- [WebKitGTK — localizar texto na página](https://webkitgtk.org/reference/webkit2gtk/stable/class.FindController.html)
+- [Debian — catálogo de navegadores Linux](https://wiki.debian.org/WebBrowsers)
+
 ## O que já funciona nesta versão
 
 - Aplicativo Linux com janela própria.
