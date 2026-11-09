@@ -680,20 +680,25 @@ class BrowserWindow(Gtk.Window):
 
             # Em 1x não há nada para ajustar. Para outras velocidades, usa
             # delegação de eventos, sem MutationObserver varrendo o DOM inteiro.
-            if rate != 1.0:
-                media_script = """
-                (() => {
-                  const rate = RATE;
-                  const apply = media => {
-                    if (!(media instanceof HTMLMediaElement)) return;
-                    try { media.playbackRate = rate; media.defaultPlaybackRate = rate; } catch (_) {}
-                  };
-                  document.querySelectorAll('video,audio').forEach(apply);
-                  document.addEventListener('play', event => apply(event.target), true);
-                  document.addEventListener('loadedmetadata', event => apply(event.target), true);
-                })();
-                """.replace("RATE", str(rate))
-                view.run_javascript(media_script, None, None, None)
+            media_script = """
+            (() => {
+              const requestedRate = RATE;
+              let state = window.__nmPlaybackRateState;
+              if (!state && requestedRate === 1) return;
+              if (!state) {
+                state = window.__nmPlaybackRateState = {rate: requestedRate};
+                state.apply = media => {
+                  if (!(media instanceof HTMLMediaElement)) return;
+                  try { media.playbackRate = state.rate; media.defaultPlaybackRate = state.rate; } catch (_) {}
+                };
+                document.addEventListener('play', event => state.apply(event.target), true);
+                document.addEventListener('loadedmetadata', event => state.apply(event.target), true);
+              }
+              state.rate = requestedRate;
+              document.querySelectorAll('video,audio').forEach(state.apply);
+            })();
+            """.replace("RATE", str(rate))
+            view.run_javascript(media_script, None, None, None)
 
             if urlparse(url).hostname in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
                 if self._youtube_focus_script:
