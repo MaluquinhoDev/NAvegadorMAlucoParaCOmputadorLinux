@@ -1,5 +1,16 @@
 # Perfil econômico: Intel Celeron N3060 e 4 GB de RAM
 
+## Otimizações adicionais da versão 0.4.0
+
+- **PSI + MemAvailable:** o navegador consulta `/proc/pressure/memory` e `MemAvailable` a cada ciclo de gestão de abas. Em estado normal, mantém a meta de 3 WebViews e 180 s de inatividade. Com pressão alta sustentada (menos de 512 MiB disponíveis e PSI `some avg10` ≥ 2%), reduz a meta para 2 e a inatividade para 120 s. Em pressão crítica (menos de 384 MiB disponíveis e PSI `full avg10` ≥ 1%), reduz a meta para 1 e a inatividade para 90 s. Se PSI não estiver disponível ou os dados forem inválidos, mantém o perfil normal.
+- **Histórico em lotes:** páginas concluídas entram em uma fila e são persistidas em transação agrupada a cada 3 segundos; a poda do histórico ocorre em blocos de 100 novas entradas. Visitas repetidas ao mesmo URL em 30 segundos atualizam o registro recente. O lote é descarregado ao fechar a janela.
+- **SQLite:** WAL já era usado; agora há `busy_timeout` de 500 ms, cache de página de 2 MiB e armazenamento temporário em memória. A durabilidade padrão do SQLite é preservada; não foi usado `synchronous=OFF`.
+- **Autocomplete:** as consultas aguardam 180 ms após a última tecla, evitando uma consulta síncrona por caractere.
+- **Mídia:** em 1× nenhum script de velocidade é instalado. Em outras velocidades, dois eventos delegados tratam mídias atuais e dinâmicas; não há varredura contínua de mutações do DOM.
+- **Script YouTube:** arquivo carregado uma vez na inicialização, em vez de relido do disco a cada navegação.
+- **Configurações:** gravação por arquivo temporário + rename, evitando deixar JSON truncado se o processo for interrompido durante a escrita.
+
+
 ## Otimizações implementadas no aplicativo
 
 - Limite de 12 abas abertas.
@@ -36,7 +47,7 @@ Estacionar destrói a WebView e preserva URL/título, não a árvore DOM. Ao res
 
 ## Medição reproduzível
 
-Execute bash scripts/diagnose-performance.sh antes e durante o uso. Compare o mesmo conjunto de páginas, mesmo nível de zoom, mesma qualidade de vídeo e duração. Registre:
+Execute `bash scripts/diagnose-performance.sh` antes e durante o uso. O diagnóstico agora registra PSI de CPU, memória e I/O, MemAvailable e RSS/PSS dos processos do navegador quando `smaps_rollup` está disponível. Compare o mesmo conjunto de páginas, mesmo nível de zoom, mesma qualidade de vídeo e duração. Registre:
 - RAM disponível e swap usada;
 - RSS do processo principal e processos WebKit;
 - CPU após 1 minuto de estabilização;
@@ -44,4 +55,4 @@ Execute bash scripts/diagnose-performance.sh antes e durante o uso. Compare o me
 - comportamento ao alternar entre 4–6 páginas;
 - uso de CPU durante vídeo 480p/720p.
 
-A CI confirma sintaxe, testes e empacotamento, mas não mede desempenho físico no Celeron N3060. Resultados reais exigem medição no computador-alvo.
+A CI confirma sintaxe, testes e empacotamento, mas não mede desempenho físico no Celeron N3060. Os limites adaptativos são heurísticas conservadoras, não um benchmark nem uma promessa de redução fixa de RAM. Resultados reais exigem medição no computador-alvo.
