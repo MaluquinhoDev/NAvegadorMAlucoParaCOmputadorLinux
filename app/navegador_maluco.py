@@ -692,6 +692,57 @@ class BrowserWindow(Gtk.Window):
                 self.update_loading_ui(view)
                 self.load_progress.set_fraction(1.0)
             self.inject_page_features(view, url)
+            view.run_javascript("""
+                (() => {
+                  const n = performance.getEntriesByType('navigation')[0];
+                  if (!n) return JSON.stringify(null);
+                  const resources = performance.getEntriesByType('resource');
+                  const delta = (end, start) => {
+                    const value = Number(n[end]) - Number(n[start]);
+                    return Number.isFinite(value) && value > 0 ? value : 0;
+                  };
+                  return JSON.stringify({
+                    dns_ms: delta('domainLookupEnd', 'domainLookupStart'),
+                    connect_ms: delta('connectEnd', 'connectStart'),
+                    tls_ms: n.secureConnectionStart > 0
+                      ? Math.max(0, n.connectEnd - n.secureConnectionStart) : null,
+                    ttfb_ms: delta('responseStart', 'requestStart'),
+                    dom_ms: Number.isFinite(n.domContentLoadedEventEnd)
+                      ? n.domContentLoadedEventEnd : null,
+                    resource_count: resources.length,
+                    transfer_bytes: resources.reduce((sum, item) => sum + (item.transferSize || 0), 0)
+                  });
+                })()
+                """, None, self.on_navigation_metrics, page)
+
+    def on_navigation_metrics(self, view, result, page):
+        """Coleta tempos expostos pela Navigation Timing API sem registrar URLs."""
+        try:
+            raw = view.run_javascript_finish(result).get_js_value().to_string()
+            metrics = json.loads(raw)
+            if not isinstance(metrics, dict):
+                return
+        except (GLib.Error, AttributeError, TypeError, ValueError):
+            return
+        page.load_metrics = metrics
+        if page is not self.active_page():
+            return
+        labels = (
+            ("DNS", metrics.get("dns_ms")),
+            ("conexão", metrics.get("connect_ms")),
+            ("TLS", metrics.get("tls_ms")),
+            ("TTFB", metrics.get("ttfb_ms")),
+            ("DOM", metrics.get("dom_ms")),
+        )
+        details = " · ".join(f"{name} {value:.0f} ms" for name, value in labels if value is not None)
+        resources = metrics.get("resource_count", 0)
+        transfer = metrics.get("transfer_bytes", 0)
+        self.status.set_tooltip_text(
+            f"Tempos da Navigation Timing API: {details}. "
+            f"Recursos observáveis: {resources}; transferência observável: {transfer} bytes. "
+            "Métricas de recursos cross-origin podem ser limitadas por Timing-Allow-Origin; "
+            "valores ausentes ou zero não significam necessariamente ausência de latência."
+        )
 
     def inject_page_features(self, view, url):
         rate = float(self.settings.get("playback_rate", 1.0))
