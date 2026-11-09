@@ -665,26 +665,8 @@ class BrowserWindow(Gtk.Window):
 
     def inject_page_features(self, view, url):
         rate = float(self.settings.get("playback_rate", 1.0))
-        media_script = """
-        (() => {
-          const rate = RATE;
-          const apply = root => {
-            if (root && root.querySelectorAll) root.querySelectorAll('video,audio').forEach(m => {
-              try { m.playbackRate = rate; m.defaultPlaybackRate = rate; } catch (_) {}
-            });
-          };
-          apply(document);
-          document.addEventListener('play', e => {
-            if (e.target instanceof HTMLMediaElement) {
-              try { e.target.playbackRate = rate; } catch (_) {}
-            }
-          }, true);
-          const observer = new MutationObserver(records => records.forEach(r =>
-            r.addedNodes.forEach(n => { if (n.nodeType === 1) apply(n); })));
-          observer.observe(document.documentElement, {childList:true, subtree:true});
-        })();
-        """.replace("RATE", str(rate))
         try:
+            # Tracking leve para impedir o estacionamento de páginas com formulários alterados.
             view.run_javascript("""
                 (() => {
                   if (window.__nmDirtyTrackingInstalled) return;
@@ -694,10 +676,26 @@ class BrowserWindow(Gtk.Window):
                   document.addEventListener('change', () => { window.__nmDirtyForm = true; }, true);
                 })();
                 """, None, None, None)
-            view.run_javascript(media_script, None, None, None)
+
+            # Em 1x não há nada para ajustar. Para outras velocidades, usa
+            # delegação de eventos, sem MutationObserver varrendo o DOM inteiro.
+            if rate != 1.0:
+                media_script = """
+                (() => {
+                  const rate = RATE;
+                  const apply = media => {
+                    if (!(media instanceof HTMLMediaElement)) return;
+                    try { media.playbackRate = rate; media.defaultPlaybackRate = rate; } catch (_) {}
+                  };
+                  document.querySelectorAll('video,audio').forEach(apply);
+                  document.addEventListener('play', event => apply(event.target), true);
+                  document.addEventListener('loadedmetadata', event => apply(event.target), true);
+                })();
+                """.replace("RATE", str(rate))
+                view.run_javascript(media_script, None, None, None)
+
             if urlparse(url).hostname in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
-                script_path = ASSET_DIR / "youtube-focus.js"
-                if script_path.exists():
+                if self._youtube_focus_script:
                     defaults = json.dumps(self.settings["youtube_focus"], ensure_ascii=False)
                     shim = """
                     (() => {
@@ -720,8 +718,7 @@ class BrowserWindow(Gtk.Window):
                       }};
                     })();
                     """.replace("DEFAULTS", defaults)
-                    content = script_path.read_text(encoding="utf-8")
-                    view.run_javascript(shim + "\n" + content, None, None, None)
+                    view.run_javascript(shim + "\\n" + self._youtube_focus_script, None, None, None)
         except (GLib.Error, TypeError) as exc:
             self.status.set_text(f"Não foi possível aplicar um recurso da página: {exc}")
 
