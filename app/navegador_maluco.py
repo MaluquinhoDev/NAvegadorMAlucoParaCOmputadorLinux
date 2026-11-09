@@ -18,7 +18,7 @@ try:
     gi.require_version("WebKit2", "4.1")
 except ValueError:
     gi.require_version("WebKit2", "4.0")
-from gi.repository import Gio, GLib, Gtk, WebKit2
+from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
 
 from core import HOME_URL, MAX_TABS, can_create_tab, is_youtube_shorts, normalize_input
 
@@ -138,7 +138,7 @@ class BrowserWindow(Gtk.Window):
         self.favorite_button.connect("clicked", self.on_toggle_favorite)
         toolbar.pack_start(self.favorite_button, False, False, 0)
 
-        self.speed_button = Gtk.Button(label="1×")
+        self.speed_button = Gtk.Button(label=f"{float(self.settings.get('playback_rate', 1.0)):g}×")
         self.speed_button.set_tooltip_text("Velocidade de reprodução")
         self.speed_button.connect("clicked", self.show_speed_menu)
         toolbar.pack_start(self.speed_button, False, False, 0)
