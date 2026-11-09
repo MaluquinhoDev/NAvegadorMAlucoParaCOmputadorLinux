@@ -2,7 +2,7 @@
 
 ## Diagnóstico por recurso da versão 0.4.2
 
-- A WebView acompanha os eventos `resource-load-started`, `sent-request`, `received-response`, `finished` e `failed` do WebKitGTK.
+- A WebView acompanha os eventos `resource-load-started`, `sent-request`, `notify::response`, `finished` e `failed` do WebKitGTK.
 - O tooltip da navegação apresenta contagens de recursos iniciados/concluídos/falhos, respostas HTTP com status 400 ou superior, redirecionamentos, bytes declarados nas respostas e durações média/máxima observadas.
 - O diagnóstico mantém apenas contadores e tempos em memória durante a navegação. Não armazena URLs, parâmetros de pesquisa, cabeçalhos, cookies nem conteúdo das páginas.
 - Os bytes declarados por respostas podem não representar o tráfego efetivo (compressão, cache, respostas parciais e respostas sem tamanho conhecido). Recursos que falham antes de uma resposta não contribuem para bytes. Os valores servem para localizar padrões, não para substituir um waterfall de rede ou um benchmark.
