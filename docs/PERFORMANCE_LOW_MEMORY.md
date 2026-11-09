@@ -6,7 +6,7 @@
 - **Histórico em lotes:** páginas concluídas entram em uma fila e são persistidas em transação agrupada a cada 3 segundos; a poda do histórico ocorre em blocos de 100 novas entradas. Visitas repetidas ao mesmo URL em 30 segundos atualizam o registro recente. O lote é descarregado ao fechar a janela.
 - **SQLite:** WAL já era usado; agora há `busy_timeout` de 500 ms, cache de página de 2 MiB e armazenamento temporário em memória. A durabilidade padrão do SQLite é preservada; não foi usado `synchronous=OFF`.
 - **Autocomplete:** as consultas aguardam 180 ms após a última tecla, evitando uma consulta síncrona por caractere.
-- **Mídia:** em 1× nenhum script de velocidade é instalado. Em outras velocidades, dois eventos delegados tratam mídias atuais e dinâmicas; não há varredura contínua de mutações do DOM.
+- **Mídia:** em 1× nenhum listener de mídia é registrado; o script retorna imediatamente. Em outras velocidades, dois eventos delegados tratam mídias atuais e dinâmicas; não há varredura contínua de mutações do DOM.
 - **Script YouTube:** arquivo carregado uma vez na inicialização, em vez de relido do disco a cada navegação.
 - **Configurações:** gravação por arquivo temporário + rename, evitando deixar JSON truncado se o processo for interrompido durante a escrita.
 
