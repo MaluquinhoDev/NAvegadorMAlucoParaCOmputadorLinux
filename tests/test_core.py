@@ -1,6 +1,6 @@
 import unittest
 
-from app.core import HOME_URL, can_create_tab, is_youtube_shorts, normalize_input
+from app.core import HOME_URL, MAX_RESIDENT_TABS, MAX_TABS, SUSPEND_AFTER_SECONDS, can_create_tab, is_youtube_shorts, normalize_input
 
 
 class BrowserCoreTests(unittest.TestCase):
@@ -17,9 +17,12 @@ class BrowserCoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_input("javascript:alert(1)")
 
-    def test_tab_limit(self):
-        self.assertTrue(can_create_tab(29))
-        self.assertFalse(can_create_tab(30))
+    def test_low_memory_tab_limits(self):
+        self.assertEqual(MAX_TABS, 12)
+        self.assertEqual(MAX_RESIDENT_TABS, 3)
+        self.assertEqual(SUSPEND_AFTER_SECONDS, 180)
+        self.assertTrue(can_create_tab(MAX_TABS - 1))
+        self.assertFalse(can_create_tab(MAX_TABS))
 
     def test_shorts_detection(self):
         self.assertTrue(is_youtube_shorts("https://www.youtube.com/shorts/abc"))
