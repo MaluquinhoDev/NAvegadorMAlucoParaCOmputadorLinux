@@ -673,7 +673,7 @@ class BrowserWindow(Gtk.Window):
         page.resource_started[key] = time.monotonic()
         page.resource_metrics["started"] += 1
         resource.connect("sent-request", self.on_resource_sent_request, page)
-        resource.connect("received-response", self.on_resource_received_response, page)
+        resource.connect("notify::response", self.on_resource_received_response, page)
         resource.connect("finished", self.on_resource_finished, page)
         resource.connect("failed", self.on_resource_failed, page)
 
@@ -681,7 +681,10 @@ class BrowserWindow(Gtk.Window):
         if redirected_response is not None:
             page.resource_metrics["redirects"] += 1
 
-    def on_resource_received_response(self, _resource, response, page):
+    def on_resource_received_response(self, resource, _property, page):
+        response = resource.get_response()
+        if response is None:
+            return
         metrics = page.resource_metrics
         metrics["responses"] += 1
         try:
