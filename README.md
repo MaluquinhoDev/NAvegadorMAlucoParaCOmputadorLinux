@@ -34,6 +34,7 @@ A versão 0.4.1 adota um perfil econômico adaptativo para máquinas com aproxim
 - Sugestões locais na barra de endereço, combinando histórico, favoritos e abas abertas sem enviar os termos digitados a um serviço externo.
 - Mecanismo de pesquisa selecionável: DuckDuckGo, Startpage ou Google.
 - Indicador estimado de carregamento, botão para interromper navegação e estados de conexão, redirecionamento e recebimento de conteúdo.
+- Diagnóstico de carregamento por navegação: tempo total observado e métricas disponíveis de DNS, conexão, TLS, TTFB, DOM e recursos, sem armazenar URLs ou conteúdo.
 - Localizar texto na página (Ctrl+F) e zoom (Ctrl++, Ctrl+- e Ctrl+0).
 - Pré-carregamento especulativo não é ativado: em 4 GB de RAM, o ganho potencial não justifica o consumo contínuo de memória e rede.
 - Até 3 WebViews residentes como alvo.
