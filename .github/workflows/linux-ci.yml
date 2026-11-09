@@ -26,7 +26,7 @@ jobs:
       - name: Validate Python and shell syntax
         run: |
           python3 -m compileall -q app tests
-          bash -n scripts/build-deb.sh scripts/build-native.sh scripts/build-native-deb.sh scripts/diagnose-performance.sh
+          bash -n scripts/build-deb.sh scripts/build-native.sh scripts/build-native-deb.sh scripts/benchmark-startup.sh scripts/diagnose-performance.sh
 
       - name: Verify GTK and WebKitGTK bindings
         run: |
@@ -80,9 +80,8 @@ jobs:
           retention-days: 90
 
   build-native-experimental:
-    name: Experimental Nuitka native build (not release)
+    name: Nuitka native build + Debian package
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -103,6 +102,9 @@ jobs:
 
       - name: Smoke-test compiled executable
         run: timeout 25s xvfb-run -a dist/native/navegador-maluco-native --smoke-test
+
+      - name: Compare Python and native startup (5 runs each)
+        run: BENCHMARK_RUNS=5 bash scripts/benchmark-startup.sh
 
       - name: Build Debian package from the compiled executable
         run: APP_VERSION=0.4.4 bash scripts/build-native-deb.sh
@@ -126,5 +128,13 @@ jobs:
         with:
           name: navegador-maluco-native-deb-ubuntu-24.04-amd64
           path: dist/navegador-maluco-native_0.4.4_amd64.deb
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload startup benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: navegador-maluco-startup-benchmark
+          path: dist/startup-benchmark.csv
           if-no-files-found: error
           retention-days: 90
