@@ -58,8 +58,8 @@ class BrowserStore:
     def __init__(self):
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(DATA_DIR / "browser.sqlite3", timeout=1.5)
-        self.db.execute("PRAGMA busy_timeout=1500")
+        self.db = sqlite3.connect(DATA_DIR / "browser.sqlite3", timeout=0.5)
+        self.db.execute("PRAGMA busy_timeout=500")
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA cache_size=-2048")
         self.db.execute("PRAGMA temp_store=MEMORY")
@@ -160,6 +160,7 @@ class BrowserStore:
         self.db.commit()
 
     def clear_history(self):
+        self._pending_history.clear()
         self.db.execute("DELETE FROM history")
         self.db.commit()
 
