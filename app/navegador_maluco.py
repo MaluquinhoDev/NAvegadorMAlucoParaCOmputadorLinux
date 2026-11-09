@@ -987,6 +987,7 @@ class BrowserWindow(Gtk.Window):
 
     def on_address_suggestion_selected(self, _completion, model, tree_iter):
         target = model.get_value(tree_iter, 1)
+        self._suggestion_generation += 1
         self._selecting_suggestion = True
         self.address.set_text(target)
         self._selecting_suggestion = False
@@ -1001,6 +1002,7 @@ class BrowserWindow(Gtk.Window):
             self.new_tab(uri)
 
     def on_address_activate(self, entry):
+        self._suggestion_generation += 1
         try:
             uri = normalize_input(entry.get_text(), self.settings.get("search_engine", "DuckDuckGo"))
         except ValueError as exc:
