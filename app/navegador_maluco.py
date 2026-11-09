@@ -2,6 +2,7 @@
 """Navegador Maluco — shell desktop GTK + WebKitGTK."""
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import re
@@ -120,20 +121,25 @@ class BrowserStore:
             self._pending_history = pending + self._pending_history
             raise
 
-    def search_suggestions(self, query, limit=8):
-        """Sugestões locais: favoritos e histórico, sem enviar texto a terceiros."""
+    @staticmethod
+    def search_suggestions_background(database_path, query, limit=8):
+        """Consulta sugestões em conexão própria, fora da thread GTK."""
         query = (query or "").strip()
         if len(query) < 2:
             return []
         pattern = f"%{query}%"
-        favorites = self.db.execute(
-            "SELECT url,title FROM favorites WHERE title LIKE ? OR url LIKE ? ORDER BY created_at DESC LIMIT ?",
-            (pattern, pattern, limit)
-        ).fetchall()
-        history = self.db.execute(
-            "SELECT url,title FROM history WHERE title LIKE ? OR url LIKE ? ORDER BY visited_at DESC LIMIT ?",
-            (pattern, pattern, limit)
-        ).fetchall()
+        connection = sqlite3.connect(database_path, timeout=0.25)
+        try:
+            favorites = connection.execute(
+                "SELECT url,title FROM favorites WHERE title LIKE ? OR url LIKE ? ORDER BY created_at DESC LIMIT ?",
+                (pattern, pattern, limit)
+            ).fetchall()
+            history = connection.execute(
+                "SELECT url,title FROM history WHERE title LIKE ? OR url LIKE ? ORDER BY visited_at DESC LIMIT ?",
+                (pattern, pattern, limit)
+            ).fetchall()
+        finally:
+            connection.close()
         result, seen = [], set()
         for url, title in favorites + history:
             if url not in seen:
@@ -180,6 +186,10 @@ class BrowserWindow(Gtk.Window):
         self._suspend_timer = GLib.timeout_add_seconds(45, self.enforce_resident_limit)
         self._history_timer = GLib.timeout_add_seconds(3, self.flush_history)
         self._suggestion_source = 0
+        self._suggestion_generation = 0
+        self._suggestion_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="nm-suggestions"
+        )
         self.diagnostics_enabled = os.environ.get("NM_DIAGNOSTICS") == "1"
         try:
             self._youtube_focus_script = (ASSET_DIR / "youtube-focus.js").read_text(encoding="utf-8")
@@ -329,6 +339,8 @@ class BrowserWindow(Gtk.Window):
                     GLib.source_remove(source)
                 except GLib.Error:
                     pass
+        self._suggestion_generation += 1
+        self._suggestion_executor.shutdown(wait=False, cancel_futures=True)
         try:
             self.store.flush_history()
             self.store.db.close()
@@ -925,6 +937,7 @@ class BrowserWindow(Gtk.Window):
     def on_address_changed(self, entry):
         if getattr(self, "_selecting_suggestion", False):
             return
+        self._suggestion_generation += 1
         self.address_model.clear()
         if self._suggestion_source:
             GLib.source_remove(self._suggestion_source)
@@ -937,7 +950,27 @@ class BrowserWindow(Gtk.Window):
         query = entry.get_text().strip()
         if len(query) < 2 or entry is not self.address:
             return GLib.SOURCE_REMOVE
-        rows = self.store.search_suggestions(query, limit=8)
+        generation = self._suggestion_generation
+        database_path = str(DATA_DIR / "browser.sqlite3")
+        future = self._suggestion_executor.submit(
+            BrowserStore.search_suggestions_background, database_path, query, 8
+        )
+        future.add_done_callback(
+            lambda completed: GLib.idle_add(
+                self.apply_address_suggestions, query, generation, completed
+            )
+        )
+        return GLib.SOURCE_REMOVE
+
+    def apply_address_suggestions(self, query, generation, future):
+        if generation != self._suggestion_generation or not self.get_visible():
+            return GLib.SOURCE_REMOVE
+        try:
+            rows = future.result()
+        except (sqlite3.Error, OSError) as exc:
+            if self.diagnostics_enabled:
+                print(f"[Navegador Maluco] autocomplete indisponível: {exc}", file=sys.stderr)
+            rows = []
         for page in self.webviews:
             url = getattr(page, "url", "")
             title = getattr(page, "title", "")
