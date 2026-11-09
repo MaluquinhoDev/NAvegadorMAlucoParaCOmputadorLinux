@@ -15,7 +15,7 @@ A cada atualização aprovada pelo GitHub Actions, o pacote Debian `.deb` é pub
 5. No terminal, entre na pasta extraída e execute:
 
 ```bash
-sudo apt install ./navegador-maluco_0.3.0_all.deb
+sudo apt install ./navegador-maluco_0.4.0_all.deb
 ```
 
 O gerenciador de pacotes instala as dependências GTK/WebKitGTK. Depois, abra **Navegador Maluco** pelo menu de aplicativos ou execute:
@@ -28,7 +28,7 @@ O pacote foi configurado para sistemas Debian/Ubuntu 64 bits, incluindo Linux Mi
 
 ## Otimizações para computadores com pouca memória
 
-A versão 0.3.0 adota um perfil econômico para máquinas com aproximadamente 4 GB de RAM:
+A versão 0.4.0 adota um perfil econômico adaptativo para máquinas com aproximadamente 4 GB de RAM:
 
 - Limite de 12 abas abertas.
 - Sugestões locais na barra de endereço, combinando histórico, favoritos e abas abertas sem enviar os termos digitados a um serviço externo.
@@ -42,6 +42,11 @@ A versão 0.3.0 adota um perfil econômico para máquinas com aproximadamente 4 
 - Abas com reprodução ativa ou formulários alterados não são estacionadas automaticamente.
 - A aceleração gráfica permanece na política padrão sob demanda do WebKitGTK; não é forçada nem desativada.
 - Diagnóstico do sistema disponível em scripts/diagnose-performance.sh. Guia completo: [docs/PERFORMANCE_LOW_MEMORY.md](docs/PERFORMANCE_LOW_MEMORY.md).
+- Gravações do histórico agrupadas em lotes, com poda periódica em vez de apagar registros antigos a cada navegação.
+- Sugestões da barra de endereço com debounce de 180 ms para evitar consultas ao banco a cada tecla.
+- Ajuste adaptativo da meta de WebViews usando MemAvailable e PSI do Linux: normal (3), pressão alta (2) e crítica (1), sem forçar encerramentos de páginas ativas.
+- Scripts de velocidade de mídia sem MutationObserver global; velocidade 1× não instala observadores e velocidades personalizadas usam eventos delegados.
+- Diagnóstico inclui PSI de CPU/memória/I/O e PSS quando o kernel disponibiliza smaps_rollup.
 
 O estacionamento é conservador: a meta de três WebViews residentes pode ser temporariamente excedida quando as abas restantes estão ocupadas ou não podem ser estacionadas com segurança.
 
@@ -55,7 +60,7 @@ O estacionamento é conservador: a meta de três WebViews residentes pode ser te
 | Falkon | Navegador gráfico baseado em Chromium, listado entre as opções Linux. | Referência de navegador leve, mas sem copiar recursos que aumentem dependências ou consumo. |
 | qutebrowser | Navegação orientada ao teclado. | Atalhos de localizar e zoom foram incorporados; o restante do modelo modal não foi adotado. |
 
-A implementação 0.3.0 combina sugestões privadas locais, seleção de mecanismo de pesquisa, progresso de carregamento, interrupção de navegação, localizar na página e controle de zoom. O indicador usa a estimativa fornecida pelo WebKitGTK; não representa uma medição exata do tempo restante.
+A implementação 0.4.0 combina sugestões privadas locais, seleção de mecanismo de pesquisa, progresso de carregamento, interrupção de navegação, localizar na página e controle de zoom. O indicador usa a estimativa fornecida pelo WebKitGTK; não representa uma medição exata do tempo restante.
 
 Fontes técnicas:
 - [Mozilla — arquitetura da barra de endereço](https://firefox-source-docs.mozilla.org/browser/urlbar/index.html)
@@ -106,7 +111,7 @@ Testes e pacote:
 
 ```bash
 python3 -m unittest discover -s tests -v
-APP_VERSION=0.3.0 bash scripts/build-deb.sh
+APP_VERSION=0.4.0 bash scripts/build-deb.sh
 ```
 
 ## Arquitetura e inventário
