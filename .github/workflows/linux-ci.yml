@@ -108,8 +108,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: navegador-maluco-native-ubuntu-24.04-experimental
-          path: |
-            dist/native/navegador-maluco-native
-            app/assets/**
+          path: dist/native/**
           if-no-files-found: error
           retention-days: 30
