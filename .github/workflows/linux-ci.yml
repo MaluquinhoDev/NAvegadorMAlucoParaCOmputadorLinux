@@ -52,6 +52,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: navegador-maluco-linux-mint-deb
-          path: dist/navegador-maluco_0.2.0_all.deb
+          path: dist/navegador-maluco_0.3.0_all.deb
           if-no-files-found: error
           retention-days: 90
