@@ -3,7 +3,7 @@
 ## Otimizações adicionais da versão 0.4.1
 
 - **Inicialização em duas etapas:** a janela apresenta primeiro uma tela local mínima; a navegação para a página inicial remota é adiada em 400 ms após a janela ser mostrada. Isso melhora a responsividade percebida da interface, mas não reduz o tempo de resposta do site nem garante menor tempo total de inicialização.
-- **Tempo de navegação observado:** a barra de status informa o intervalo entre `LoadEvent.STARTED` e `LoadEvent.FINISHED`. Esse valor inclui trabalho de rede, servidor, parsing e carregamento de recursos; não isola DNS, TLS, TTFB ou renderização. A medição é local e não grava URLs ou conteúdo de páginas.
+- **Tempo de navegação observado:** a barra de status informa o intervalo entre `LoadEvent.STARTED` e `LoadEvent.FINISHED`. O tooltip apresenta os tempos que a Navigation Timing API disponibiliza para DNS, conexão, TLS, TTFB e DOM, além da quantidade e dos bytes transferidos dos recursos observáveis. O navegador não grava URLs nem conteúdo. Recursos de outras origens podem ocultar parte das métricas sem `Timing-Allow-Origin`; valores zero não provam latência zero.
 
 ## Otimizações adicionais da versão 0.4.0
 
