@@ -56,3 +56,12 @@ Execute `bash scripts/diagnose-performance.sh` antes e durante o uso. O diagnós
 - uso de CPU durante vídeo 480p/720p.
 
 A CI confirma sintaxe, testes e empacotamento, mas não mede desempenho físico no Celeron N3060. Os limites adaptativos são heurísticas conservadoras, não um benchmark nem uma promessa de redução fixa de RAM. Resultados reais exigem medição no computador-alvo.
+
+## Referências técnicas
+
+- [Linux PSI — documentação do systemd](https://systemd.io/PRESSURE/): significado de pressão de CPU, memória e I/O.
+- [SQLite WAL](https://www.sqlite.org/wal.html): concorrência, checkpoints, transações e compromissos do modo WAL.
+- [SQLite PRAGMA](https://www.sqlite.org/pragma.html): busy_timeout, cache e comportamento de sincronização.
+- [GLib Main Loop](https://docs.gtk.org/glib/main-loop.html): timers, callbacks e ciclo de eventos da interface.
+- [WebKitGTK MemoryPressureSettings](https://github.com/WebKit/WebKit/blob/main/Source/WebKit/UIProcess/API/glib/WebKitMemoryPressureSettings.cpp): advertência contra limites de memória agressivos.
+- [WebKitGTK 2.54.2](https://www.webkitgtk.org/2026/10/23/webkitgtk2.54.2-released.html): melhorias na liberação de páginas suspensas e processos ociosos sob pressão de memória.
