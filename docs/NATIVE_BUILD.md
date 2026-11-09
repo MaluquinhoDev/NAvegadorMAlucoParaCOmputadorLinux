@@ -62,3 +62,14 @@ O pacote nativo não substitui automaticamente o Python. A promoção exige test
 O script `scripts/benchmark-startup.sh` executa cinco inicializações de cada variante com perfis XDG isolados e ambiente Xvfb idêntico. Ele mede o tempo até o smoke test detectar a primeira WebView e o pico de RSS do processo, registrando os dados em CSV. O relatório é publicado pela CI como `navegador-maluco-startup-benchmark`.
 
 Essa medição compara somente inicialização do shell GTK/WebKitGTK no runner Ubuntu 24.04. Não mede velocidade de carregamento de sites, JavaScript, vídeo, rolagem ou desempenho no Celeron físico. Os resultados precisam ser interpretados por mediana e com a variabilidade entre execuções; não são uma prova de que o navegador inteiro ficou mais rápido.
+
+
+### Resultado inicial registrado pela CI
+
+Na execução `42705920941`, com cinco inicializações de cada variante no mesmo runner Ubuntu 24.04:
+- Python: mediana de 0,42 s e pico RSS reportado de 181.384 KiB.
+- Nuitka accelerated: mediana de 0,43 s e pico RSS reportado de 182.756 KiB.
+
+A diferença observada foi de +0,01 s e +1.372 KiB para a versão compilada. Isso é pequeno demais para uma conclusão estatística, mas não demonstra vantagem da compilação nativa nessa medição. O valor de RSS vem do GNU time aplicado ao comando de smoke test; não é uma soma auditada de PSS de todos os processos WebKit. O resultado não representa o Celeron N3060 e não mede carregamento de sites ou fluidez de rolagem.
+
+A leitura técnica é importante: compilar o shell Python pode reduzir trabalho de inicialização do próprio código, mas o motor WebKitGTK continua responsável pela maior parte da navegação. Uma melhoria expressiva no uso real precisa ser confirmada em tarefas completas e no hardware-alvo, não presumida pelo formato do executável.
