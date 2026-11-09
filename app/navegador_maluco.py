@@ -193,12 +193,12 @@ class BrowserWindow(Gtk.Window):
         toolbar.set_border_width(7)
         root.pack_start(toolbar, False, False, 0)
 
-        self.back_button = self.icon_button("go-previous", "Voltar", lambda *_: self.active_view().go_back() if self.active_view().can_go_back() else None)
-        self.forward_button = self.icon_button("go-next", "Avançar", lambda *_: self.active_view().go_forward() if self.active_view().can_go_forward() else None)
+        self.back_button = self.icon_button("go-previous", "Voltar", lambda *_: self.active_view().go_back() if self.active_view() and self.active_view().can_go_back() else None)
+        self.forward_button = self.icon_button("go-next", "Avançar", lambda *_: self.active_view().go_forward() if self.active_view() and self.active_view().can_go_forward() else None)
         self.reload_button = self.icon_button("view-refresh", "Recarregar", lambda *_: self.active_view().reload() if self.active_view() else None)
         self.stop_button = self.icon_button("process-stop", "Parar carregamento", lambda *_: self.stop_active_loading())
         self.stop_button.hide()
-        self.home_button = self.icon_button("go-home", "Página inicial", lambda *_: self.active_view().load_uri(HOME_URL))
+        self.home_button = self.icon_button("go-home", "Página inicial", lambda *_: self.navigate_to(HOME_URL))
         for button in (self.back_button, self.forward_button, self.reload_button, self.home_button):
             toolbar.pack_start(button, False, False, 0)
         toolbar.pack_start(self.icon_button("tab-new", "Nova aba (Ctrl+T)", lambda *_: self.new_tab(HOME_URL)), False, False, 0)
