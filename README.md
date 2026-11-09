@@ -1,78 +1,91 @@
-# Navegador Maluco — Linux
+# Navegador Maluco — Linux Mint
 
-Portabilidade **integral** do aplicativo Android [NavegadorMaluco](https://github.com/MaluquinhoDev/NavegadorMaluco) para um navegador desktop no Linux Mint.
+Aplicativo desktop próprio para Linux, com interface GTK e motor WebKitGTK. O objetivo é portar o navegador Android completo; esta primeira versão instalável entrega o núcleo de navegação desktop e uma parte inicial dos recursos.
 
-> **Escopo:** recriar o navegador completo, preservando sua identidade, interface e conjunto de recursos. A extensão Firefox existente é apenas um protótipo técnico de reaproveitamento de uma funcionalidade; não representa o produto final.
+**Projeto Android de referência:** [MaluquinhoDev/NavegadorMaluco](https://github.com/MaluquinhoDev/NavegadorMaluco)
 
-## Objetivo do projeto
+## Baixar e instalar
 
-Construir um aplicativo de navegação próprio para Linux, com janela e interface próprias, gerenciamento de abas e sessões, ferramentas de estudo, bloqueios, extensões, reprodução de mídia e tradução de páginas. O Firefox instalado no sistema não será a interface final nem um requisito para usar o Navegador Maluco.
+A cada atualização aprovada pelo GitHub Actions, o pacote Debian `.deb` é publicado como artefato da execução.
 
-O projeto deve manter paridade funcional com o aplicativo Android sempre que houver equivalente tecnicamente viável no desktop. Recursos dependentes de APIs Android serão reimplementados com APIs Linux/WebKit ou substitutos documentados, e não simplesmente removidos.
+1. Abra [GitHub Actions](https://github.com/MaluquinhoDev/NAvegadorMAlucoParaCOmputadorLinux/actions).
+2. Entre na execução mais recente com resultado verde.
+3. Na seção Artifacts, baixe `navegador-maluco-linux-mint-deb`.
+4. Extraia o ZIP.
+5. No terminal, entre na pasta extraída e execute:
 
-## Hardware de referência
+```bash
+sudo apt install ./navegador-maluco_0.1.0_all.deb
+```
 
-- Linux Mint 64 bits.
-- Intel Celeron N3060, 2 núcleos.
-- 4 GB de RAM.
+O gerenciador de pacotes instala as dependências GTK/WebKitGTK. Depois, abra **Navegador Maluco** pelo menu de aplicativos ou execute:
 
-O consumo de memória, CPU e armazenamento é requisito arquitetural. O navegador deve evitar processos e serviços residentes desnecessários, limitar abas residentes e permitir descarregar/estacionar abas inativas.
+```bash
+navegador-maluco
+```
 
-## Arquitetura-alvo em avaliação
+O pacote foi configurado para sistemas Debian/Ubuntu 64 bits, incluindo Linux Mint. A disponibilidade do pacote WebKitGTK depende da versão do Mint; o pacote declara WebKitGTK 4.1 ou 4.0.
 
-A direção arquitetural passa a ser um aplicativo desktop próprio baseado em **Tauri + WebKitGTK**, sujeito a uma prova de conceito de desempenho e compatibilidade no Linux Mint. Essa opção permite janela, menus, armazenamento e integração nativos sem embutir uma distribuição Chromium como o Electron.
+## O que já funciona nesta versão
 
-A arquitetura não está declarada como validada: WebKitGTK possui diferenças de compatibilidade em relação ao Android WebView/Chromium e ao GeckoView. O motor, a versão mínima do Linux Mint e o empacotamento só serão fixados após testes reproduzíveis. A extensão Firefox deste repositório permanece como laboratório de reaproveitamento de JavaScript, não como destino final.
+- Aplicativo Linux com janela própria.
+- Motor WebKitGTK integrado, sem exigir Firefox como hospedeiro.
+- Barra de endereço e pesquisa DuckDuckGo.
+- Abas múltiplas, com limite de 30.
+- Voltar, avançar, recarregar e página inicial.
+- Favoritos e histórico local em SQLite.
+- Downloads na pasta `~/Downloads`.
+- Controle de velocidade de mídia HTML5: 0,5× a 2,5×.
+- YouTube Focus: script original do Android reaproveitado, preferências iniciais e painel nativo de opções.
+- Bloqueio de navegação direta para URLs de Shorts.
+- Dados e configurações armazenados localmente no perfil do usuário.
 
-## Funcionalidades a portar
+## Limitações conhecidas
 
-O inventário inicial está em [docs/FEATURE_PARITY.md](docs/FEATURE_PARITY.md). Inclui, entre outros:
+Esta é a **primeira versão funcional do shell desktop**, não a paridade integral com o Android. Ainda faltam, entre outros recursos, abas estacionadas e constelações, perfis isolados, gerenciador completo de extensões, bloqueador de rede, tradução offline, player próprio/Media3, PiP, migração dos dados Android e várias opções avançadas de atenção. O YouTube pode alterar seu DOM e quebrar seletores.
 
-- Navegação, barra de endereço/pesquisa, histórico, downloads e múltiplas abas.
-- Abas estacionadas, fixadas e organizadas em constelações.
-- Perfis e isolamento de dados de navegação, dentro dos limites do motor escolhido.
-- Gerenciador de extensões locais e API compatível com o formato já usado pelo projeto.
-- Bloqueadores e controles de privacidade.
-- YouTube sem distrações, incluindo preferências detalhadas e ferramentas de estudo.
-- Biblioteca/fila de vídeos, marcações de tempo, anotações e temporizador.
-- Velocidade de reprodução, controles de mídia e modos de reprodução em janela.
-- Tradução de páginas com identificação de idioma, cache e restauração do texto original.
-- Ferramentas de atenção, sessão e recompensas.
-- Diagnóstico de compatibilidade de login/cookies sem registrar credenciais ou tokens.
+O WebKitGTK não é Chromium nem Gecko. Alguns sites, codecs, DRM, autenticação e extensões podem se comportar de forma diferente. Não há medição publicada de consumo no Celeron N3060 ainda; o hardware de referência continua sendo Celeron N3060 com 4 GB de RAM.
 
-O inventário é baseado no código e na documentação disponíveis no repositório Android de origem. Cada item deve receber estado de implementação e teste; não se considera concluído apenas por existir uma tela.
+## Desenvolvimento local
 
-## Estado real deste repositório
+Dependências no Linux Mint:
 
-- [x] Diagnóstico inicial do projeto Android.
-- [x] Protótipo de extensão Firefox para testar o reaproveitamento de um content script.
-- [x] Validação estática e empacotamento da extensão no GitHub Actions.
-- [x] Escopo corrigido para migração integral do navegador.
-- [ ] Prova de conceito do aplicativo desktop próprio.
-- [ ] Migração da interface e do núcleo de navegação.
-- [ ] Paridade funcional com o aplicativo Android.
-- [ ] Testes de instalação, estabilidade, compatibilidade e desempenho no Linux Mint.
+```bash
+sudo apt update
+sudo apt install python3 python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+```
 
-**Não existe ainda um navegador desktop completo neste repositório.** A CI da extensão comprova apenas validação estática e empacotamento daquele protótipo; não comprova a execução do navegador completo.
+Em versões que não oferecem WebKitGTK 4.1, instale `gir1.2-webkit2-4.0`.
+
+Executar a partir do repositório:
+
+```bash
+python3 app/navegador_maluco.py
+```
+
+Testes e pacote:
+
+```bash
+python3 -m unittest discover -s tests -v
+APP_VERSION=0.1.0 bash scripts/build-deb.sh
+```
+
+## Arquitetura e inventário
+
+- [Plano de migração integral](docs/PORTING_PLAN.md)
+- [Arquitetura desktop](docs/ARCHITECTURE.md)
+- [Matriz de paridade Android/Linux](docs/FEATURE_PARITY.md)
 
 ## Estrutura
 
-- `extension/youtube-focus/`: protótipo isolado de extensão Firefox.
-- `docs/FEATURE_PARITY.md`: inventário de recursos Android e matriz de paridade desktop.
-- `docs/PORTING_PLAN.md`: plano de migração integral.
-- `docs/ARCHITECTURE.md`: arquitetura desktop e decisões técnicas.
-- `scripts/` e `.github/workflows/`: validação do protótipo de extensão.
+- `app/`: aplicação GTK/WebKitGTK e lógica do navegador.
+- `app/assets/youtube-focus.js`: content script reaproveitado do Android.
+- `packaging/`: ícone e entrada de menu do Linux.
+- `scripts/build-deb.sh`: construção do pacote instalável.
+- `scripts/install-linux-mint.sh`: instalação local a partir de um clone que já contenha o .deb em `dist/`.
+- `tests/`: testes unitários da lógica independente da interface.
+- `.github/workflows/linux-ci.yml`: testes e construção automática do .deb.
 
-## Princípios de migração
+## Privacidade
 
-1. Não reduzir o projeto a uma extensão.
-2. Não remover funcionalidades silenciosamente: registrar equivalências, limitações e decisões.
-3. Separar lógica de negócio de APIs específicas do Android.
-4. Preservar dados e preferências sempre que houver formato de migração seguro.
-5. Priorizar processamento local e privacidade por padrão.
-6. Medir desempenho no hardware de referência; não inventar metas ou resultados.
-7. Manter testes de regressão para cada recurso migrado.
-
-## Projeto original
-
-[MaluquinhoDev/NavegadorMaluco](https://github.com/MaluquinhoDev/NavegadorMaluco)
+Histórico, favoritos e preferências ficam no computador. A aplicação não implementa telemetria própria. O motor WebKitGTK mantém as conexões necessárias para carregar os sites visitados. O YouTube Focus manipula a interface do YouTube; não altera o algoritmo da plataforma nem garante bloqueio de anúncios dentro do player.
