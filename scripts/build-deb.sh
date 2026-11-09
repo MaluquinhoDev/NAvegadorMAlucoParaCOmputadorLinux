@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${APP_VERSION:-0.2.0}"
+VERSION="${APP_VERSION:-0.3.0}"
 ARCH="${DEB_ARCH:-all}"
 PKG="navegador-maluco"
 STAGE="$ROOT/build/deb-root"
