@@ -74,6 +74,7 @@ class BrowserStore:
                 title TEXT NOT NULL, visited_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS history_date ON history(visited_at DESC);
+            CREATE INDEX IF NOT EXISTS history_url_date ON history(url, visited_at DESC);
         """)
         self.db.commit()
 
