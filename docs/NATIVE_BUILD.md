@@ -55,3 +55,10 @@ A CI agora:
 6. publica o .deb nativo e o executável bruto como artefatos distintos.
 
 O pacote nativo não substitui automaticamente o Python. A promoção exige teste no Mint real e benchmark A/B com mesmas páginas, perfil e condições. O modo `standalone` permanece uma linha experimental separada: ele empacota runtime e dependências Python, mas não deve ser adotado sem validar os bindings dinâmicos PyGObject/GObject Introspection e as bibliotecas GTK/WebKitGTK do sistema.
+
+
+## Comparação automática Python versus Nuitka
+
+O script `scripts/benchmark-startup.sh` executa cinco inicializações de cada variante com perfis XDG isolados e ambiente Xvfb idêntico. Ele mede o tempo até o smoke test detectar a primeira WebView e o pico de RSS do processo, registrando os dados em CSV. O relatório é publicado pela CI como `navegador-maluco-startup-benchmark`.
+
+Essa medição compara somente inicialização do shell GTK/WebKitGTK no runner Ubuntu 24.04. Não mede velocidade de carregamento de sites, JavaScript, vídeo, rolagem ou desempenho no Celeron físico. Os resultados precisam ser interpretados por mediana e com a variabilidade entre execuções; não são uma prova de que o navegador inteiro ficou mais rápido.
