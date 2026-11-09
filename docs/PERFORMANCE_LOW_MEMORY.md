@@ -1,5 +1,10 @@
 # Perfil econômico: Intel Celeron N3060 e 4 GB de RAM
 
+## Otimizações adicionais da versão 0.4.1
+
+- **Inicialização em duas etapas:** a janela apresenta primeiro uma tela local mínima; a navegação para a página inicial remota é adiada em 400 ms após a janela ser mostrada. Isso melhora a responsividade percebida da interface, mas não reduz o tempo de resposta do site nem garante menor tempo total de inicialização.
+- **Tempo de navegação observado:** a barra de status informa o intervalo entre `LoadEvent.STARTED` e `LoadEvent.FINISHED`. Esse valor inclui trabalho de rede, servidor, parsing e carregamento de recursos; não isola DNS, TLS, TTFB ou renderização. A medição é local e não grava URLs ou conteúdo de páginas.
+
 ## Otimizações adicionais da versão 0.4.0
 
 - **PSI + MemAvailable:** o navegador consulta `/proc/pressure/memory` e `MemAvailable` a cada ciclo de gestão de abas. Em estado normal, mantém a meta de 3 WebViews e 180 s de inatividade. Com pressão alta sustentada (menos de 512 MiB disponíveis e PSI `some avg10` ≥ 2%), reduz a meta para 2 e a inatividade para 120 s. Em pressão crítica (menos de 384 MiB disponíveis e PSI `full avg10` ≥ 1%), reduz a meta para 1 e a inatividade para 90 s. Se PSI não estiver disponível ou os dados forem inválidos, mantém o perfil normal.
