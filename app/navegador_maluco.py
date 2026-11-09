@@ -24,7 +24,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
 from core import HOME_URL, MAX_TABS, MAX_RESIDENT_TABS, SUSPEND_AFTER_SECONDS, HIGH_PRESSURE_SUSPEND_AFTER_SECONDS, CRITICAL_PRESSURE_SUSPEND_AFTER_SECONDS, SEARCH_ENGINES, can_create_tab, is_youtube_shorts, memory_pressure_level, normalize_input
 
 APP_NAME = "Navegador Maluco"
-APP_VERSION = "0.4.2"
+APP_VERSION = "0.4.3"
 APP_DIR = Path(__file__).resolve().parent
 ASSET_DIR = APP_DIR / "assets"
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "navegador-maluco"
@@ -180,6 +180,7 @@ class BrowserWindow(Gtk.Window):
         self._suspend_timer = GLib.timeout_add_seconds(45, self.enforce_resident_limit)
         self._history_timer = GLib.timeout_add_seconds(3, self.flush_history)
         self._suggestion_source = 0
+        self.diagnostics_enabled = os.environ.get("NM_DIAGNOSTICS") == "1"
         try:
             self._youtube_focus_script = (ASSET_DIR / "youtube-focus.js").read_text(encoding="utf-8")
         except OSError:
@@ -265,15 +266,23 @@ class BrowserWindow(Gtk.Window):
         self.connect("destroy", self.on_destroy)
         self.connect("key-press-event", self.on_key_press)
         self._startup_page = None
-        startup_view = self.new_tab("about:blank")
-        if not os.environ.get("NM_SMOKE_TEST") and startup_view:
-            self._startup_page = self.active_page()
-            startup_view.load_html("""<!doctype html>
+        self.show_all()
+
+    def initialize_startup_tab(self):
+        """Cria o primeiro WebView depois que GTK já começou a processar eventos."""
+        if self.notebook.get_n_pages() == 0:
+            startup_view = self.new_tab("about:blank")
+            if startup_view:
+                self._startup_page = self.active_page()
+                if not os.environ.get("NM_SMOKE_TEST"):
+                    startup_view.load_html("""<!doctype html>
 <html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Navegador Maluco</title>
 <style>body{margin:0;background:#f4f6f8;color:#263238;font:16px system-ui,sans-serif;display:grid;min-height:100vh;place-items:center}main{text-align:center;padding:32px}h1{font-size:2rem;margin-bottom:8px}p{color:#607078}</style>
 <main><h1>Navegador Maluco</h1><p>Preparando a página inicial…</p></main></html>""", "about:blank")
-        self.show_all()
+        if not os.environ.get("NM_SMOKE_TEST"):
+            GLib.timeout_add(400, self.load_initial_homepage)
+        return GLib.SOURCE_REMOVE
 
     def load_initial_homepage(self):
         """Adia a navegação remota até a janela já ter sido apresentada."""
@@ -441,7 +450,8 @@ class BrowserWindow(Gtk.Window):
         # permanent GPU rendering can make this low-power Intel system slower.
         page.resource_metrics = self.new_resource_metrics()
         page.resource_started = {}
-        view.connect("resource-load-started", self.on_resource_load_started, page)
+        if self.diagnostics_enabled:
+            view.connect("resource-load-started", self.on_resource_load_started, page)
         view.connect("load-changed", self.on_load_changed, page)
         view.connect("load-failed", self.on_load_failed, page)
         view.connect("notify::title", self.on_title_changed, page)
@@ -717,8 +727,9 @@ class BrowserWindow(Gtk.Window):
     def on_load_changed(self, view, event, page):
         if event == WebKit2.LoadEvent.STARTED:
             page.load_started_at = time.monotonic()
-            page.resource_metrics = self.new_resource_metrics()
-            page.resource_started = {}
+            if self.diagnostics_enabled:
+                page.resource_metrics = self.new_resource_metrics()
+                page.resource_started = {}
             page.url = view.get_uri() or ""
             if page is self.active_page():
                 self.address.set_text(page.url)
@@ -752,7 +763,8 @@ class BrowserWindow(Gtk.Window):
                 self.update_loading_ui(view)
                 self.load_progress.set_fraction(1.0)
             self.inject_page_features(view, url)
-            view.run_javascript("""
+            if self.diagnostics_enabled:
+                view.run_javascript("""
                 (() => {
                   const n = performance.getEntriesByType('navigation')[0];
                   if (!n) return JSON.stringify(null);
@@ -1155,8 +1167,9 @@ def main():
     Gtk.init(sys.argv)
     window = BrowserWindow()
     window.show_all()
-    if not os.environ.get("NM_SMOKE_TEST"):
-        GLib.timeout_add(400, window.load_initial_homepage)
+    # Prioridade padrão idle: deixa GTK desenhar a janela e processar eventos
+    # antes da inicialização potencialmente pesada do WebKitGTK.
+    GLib.idle_add(window.initialize_startup_tab)
     Gtk.main()
 
 
