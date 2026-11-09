@@ -125,6 +125,7 @@ class BrowserWindow(Gtk.Window):
         self.home_button = self.icon_button("go-home", "Página inicial", lambda *_: self.active_view().load_uri(HOME_URL))
         for button in (self.back_button, self.forward_button, self.reload_button, self.home_button):
             toolbar.pack_start(button, False, False, 0)
+        toolbar.pack_start(self.icon_button("tab-new", "Nova aba (Ctrl+T)", lambda *_: self.new_tab(HOME_URL)), False, False, 0)
 
         self.address = Gtk.Entry()
         self.address.set_placeholder_text("Digite um endereço ou pesquise na web")
@@ -164,6 +165,7 @@ class BrowserWindow(Gtk.Window):
         root.pack_start(self.status, False, False, 0)
 
         self.connect("destroy", Gtk.main_quit)
+        self.connect("key-press-event", self.on_key_press)
         self.new_tab(HOME_URL)
         self.show_all()
 
@@ -206,6 +208,39 @@ class BrowserWindow(Gtk.Window):
             menu.append(item)
         menu.show_all()
         return menu
+
+
+    def on_key_press(self, _window, event):
+        ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        alt = bool(event.state & Gdk.ModifierType.MOD1_MASK)
+        if ctrl and event.keyval in (Gdk.KEY_l, Gdk.KEY_L):
+            self.address.grab_focus()
+            self.address.select_region(0, -1)
+            return True
+        if ctrl and event.keyval in (Gdk.KEY_t, Gdk.KEY_T):
+            self.new_tab(HOME_URL)
+            return True
+        if ctrl and event.keyval in (Gdk.KEY_w, Gdk.KEY_W):
+            page = self.active_page()
+            if page:
+                self.close_tab_button(None, page)
+            return True
+        if ctrl and event.keyval in (Gdk.KEY_r, Gdk.KEY_R):
+            view = self.active_view()
+            if view:
+                view.reload()
+            return True
+        if alt and event.keyval == Gdk.KEY_Left:
+            view = self.active_view()
+            if view and view.can_go_back():
+                view.go_back()
+            return True
+        if alt and event.keyval == Gdk.KEY_Right:
+            view = self.active_view()
+            if view and view.can_go_forward():
+                view.go_forward()
+            return True
+        return False
 
     def active_page(self):
         index = self.notebook.get_current_page()
