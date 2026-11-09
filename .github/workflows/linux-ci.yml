@@ -1,4 +1,4 @@
-name: Linux extension CI
+name: Linux desktop build
 
 on:
   push:
@@ -11,26 +11,41 @@ permissions:
   contents: read
 
 jobs:
-  validate-and-package:
-    name: Validate Firefox extension
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  build-deb:
+    name: Test and build Debian package
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      - name: Install GTK and WebKitGTK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 nodejs dpkg-dev
 
-      - name: Validate and package
+      - name: Validate Python syntax
+        run: python3 -m compileall -q app tests
+
+      - name: Verify GTK and WebKitGTK bindings
+        run: |
+          /usr/bin/python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1'); from gi.repository import Gtk, WebKit2; print('GTK', Gtk.get_major_version(), 'WebKitGTK bindings loaded')"
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Validate Firefox extension prototype
         run: bash scripts/check-extension.sh
 
-      - name: Upload extension package
+      - name: Build .deb package
+        run: APP_VERSION=0.1.0 bash scripts/build-deb.sh
+
+      - name: Inspect Debian package
+        run: dpkg-deb --info dist/navegador-maluco_0.1.0_all.deb
+
+      - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: navegador-maluco-youtube-focus-firefox
-          path: dist/youtube-focus-firefox.zip
+          name: navegador-maluco-linux-mint-deb
+          path: dist/navegador-maluco_0.1.0_all.deb
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
