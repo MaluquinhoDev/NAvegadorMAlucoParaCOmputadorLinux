@@ -21,6 +21,8 @@ mkdir -p "$OUT"
     --include-data-dir="$ROOT/app/assets=assets" \
     "$ROOT/app/navegador_maluco.py"
 
+mkdir -p "$OUT/assets"
+cp -a "$ROOT/app/assets/." "$OUT/assets/"
 test -x "$OUT/navegador-maluco-native"
 echo "Executável experimental criado em: $OUT/navegador-maluco-native"
 echo "Este modo depende da versão de Python e das bibliotecas GTK/WebKitGTK do sistema."
