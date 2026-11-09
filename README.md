@@ -24,6 +24,15 @@ O gerenciador de pacotes instala as dependências GTK/WebKitGTK. Depois, abra **
 navegador-maluco
 ```
 
+Para instalar a compilação nativa Nuitka, baixe também o artefato `navegador-maluco-native-deb-ubuntu-24.04-amd64`, extraia o ZIP e execute:
+
+```bash
+sudo apt install ./navegador-maluco-native_0.4.4_amd64.deb
+navegador-maluco-native
+```
+
+As duas versões têm comandos e entradas de menu separados e podem coexistir. A versão nativa foi construída em Ubuntu 24.04 amd64 e está direcionada inicialmente ao Linux Mint 22.x.
+
 O pacote foi configurado para sistemas Debian/Ubuntu 64 bits, incluindo Linux Mint. A disponibilidade do pacote WebKitGTK depende da versão do Mint; o pacote declara WebKitGTK 4.1 ou 4.0.
 
 ## Otimizações para computadores com pouca memória
