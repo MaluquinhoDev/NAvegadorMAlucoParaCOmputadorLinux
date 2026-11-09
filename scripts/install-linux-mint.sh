@@ -13,9 +13,10 @@ if apt-cache show gir1.2-webkit2-4.1 >/dev/null 2>&1; then
 else
   sudo apt-get install -y gir1.2-webkit2-4.0
 fi
-if [[ -f "$ROOT/dist/navegador-maluco_0.1.0_all.deb" ]]; then
-  sudo apt-get install -y "$ROOT/dist/navegador-maluco_0.1.0_all.deb"
+PACKAGE="$(find "$ROOT/dist" -maxdepth 1 -type f -name 'navegador-maluco_*.deb' -print -quit)"
+if [[ -n "$PACKAGE" ]]; then
+  sudo apt-get install -y "$PACKAGE"
 else
-  echo "Pacote .deb não encontrado em dist/. O instalador de dependências foi concluído." >&2
+  echo "Pacote Debian Python não encontrado em dist/." >&2
   exit 2
 fi

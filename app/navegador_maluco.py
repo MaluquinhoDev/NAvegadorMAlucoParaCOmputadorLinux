@@ -2,11 +2,13 @@
 """Navegador Maluco — shell desktop GTK + WebKitGTK."""
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import re
 import sqlite3
 import sys
+import time
 import webbrowser
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,10 +22,10 @@ except ValueError:
     gi.require_version("WebKit2", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
 
-from core import HOME_URL, MAX_TABS, can_create_tab, is_youtube_shorts, normalize_input
+from core import HOME_URL, MAX_TABS, MAX_RESIDENT_TABS, SUSPEND_AFTER_SECONDS, HIGH_PRESSURE_SUSPEND_AFTER_SECONDS, CRITICAL_PRESSURE_SUSPEND_AFTER_SECONDS, SEARCH_ENGINES, can_create_tab, is_youtube_shorts, memory_pressure_level, normalize_input
 
 APP_NAME = "Navegador Maluco"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.4.4"
 APP_DIR = Path(__file__).resolve().parent
 ASSET_DIR = APP_DIR / "assets"
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "navegador-maluco"
@@ -57,8 +59,13 @@ class BrowserStore:
     def __init__(self):
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(DATA_DIR / "browser.sqlite3")
+        self.db = sqlite3.connect(DATA_DIR / "browser.sqlite3", timeout=0.5)
+        self.db.execute("PRAGMA busy_timeout=500")
         self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA cache_size=-2048")
+        self.db.execute("PRAGMA temp_store=MEMORY")
+        self._pending_history = []
+        self._history_since_trim = 0
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS favorites(
                 url TEXT PRIMARY KEY, title TEXT NOT NULL, created_at INTEGER NOT NULL
@@ -68,16 +75,79 @@ class BrowserStore:
                 title TEXT NOT NULL, visited_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS history_date ON history(visited_at DESC);
+            CREATE INDEX IF NOT EXISTS history_url_date ON history(url, visited_at DESC);
         """)
         self.db.commit()
 
     def add_history(self, url, title):
+        """Enfileira histórico; gravações são agrupadas fora do callback de navegação."""
         if not url or not url.startswith(("http://", "https://")):
             return
-        self.db.execute("INSERT INTO history(url,title,visited_at) VALUES(?,?,strftime('%s','now'))",
-                        (url, title or url))
-        self.db.execute("DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY id DESC LIMIT 5000)")
-        self.db.commit()
+        self._pending_history.append((url, title or url))
+        if len(self._pending_history) > 200:
+            self._pending_history = self._pending_history[-200:]
+
+    def flush_history(self):
+        """Persiste o lote em uma única transação e poda o histórico em blocos."""
+        if not self._pending_history:
+            return 0
+        pending = self._pending_history
+        self._pending_history = []
+        try:
+            for url, title in pending:
+                updated = self.db.execute(
+                    """UPDATE history SET title=?, visited_at=strftime('%s','now')
+                       WHERE id=(SELECT id FROM history WHERE url=?
+                       AND visited_at >= strftime('%s','now') - 30
+                       ORDER BY id DESC LIMIT 1)""",
+                    (title, url)
+                )
+                if updated.rowcount == 0:
+                    self.db.execute(
+                        "INSERT INTO history(url,title,visited_at) VALUES(?,?,strftime('%s','now'))",
+                        (url, title)
+                    )
+                    self._history_since_trim += 1
+            if self._history_since_trim >= 100:
+                self.db.execute(
+                    "DELETE FROM history WHERE id NOT IN "
+                    "(SELECT id FROM history ORDER BY id DESC LIMIT 5000)"
+                )
+                self._history_since_trim = 0
+            self.db.commit()
+            return len(pending)
+        except sqlite3.Error:
+            self.db.rollback()
+            self._pending_history = pending + self._pending_history
+            raise
+
+    @staticmethod
+    def search_suggestions_background(database_path, query, limit=8):
+        """Consulta sugestões em conexão própria, fora da thread GTK."""
+        query = (query or "").strip()
+        if len(query) < 2:
+            return []
+        pattern = f"%{query}%"
+        connection = sqlite3.connect(database_path, timeout=0.25)
+        try:
+            favorites = connection.execute(
+                "SELECT url,title FROM favorites WHERE title LIKE ? OR url LIKE ? ORDER BY created_at DESC LIMIT ?",
+                (pattern, pattern, limit)
+            ).fetchall()
+            history = connection.execute(
+                "SELECT url,title FROM history WHERE title LIKE ? OR url LIKE ? ORDER BY visited_at DESC LIMIT ?",
+                (pattern, pattern, limit)
+            ).fetchall()
+        finally:
+            connection.close()
+        result, seen = [], set()
+        for url, title in favorites + history:
+            if url not in seen:
+                result.append((url, title))
+                seen.add(url)
+            if len(result) >= limit:
+                break
+        return result
 
     def favorites(self):
         return self.db.execute("SELECT url,title FROM favorites ORDER BY created_at DESC LIMIT 1000").fetchall()
@@ -97,6 +167,7 @@ class BrowserStore:
         self.db.commit()
 
     def clear_history(self):
+        self._pending_history.clear()
         self.db.execute("DELETE FROM history")
         self.db.commit()
 
@@ -110,7 +181,20 @@ class BrowserWindow(Gtk.Window):
         self.config_path = CONFIG_DIR / "settings.json"
         self.settings = self.load_settings()
         self.webviews = {}
+        self._resident_limit = MAX_RESIDENT_TABS
         self._download_context = WebKit2.WebContext.get_default()
+        self._suspend_timer = GLib.timeout_add_seconds(45, self.enforce_resident_limit)
+        self._history_timer = GLib.timeout_add_seconds(3, self.flush_history)
+        self._suggestion_source = 0
+        self._suggestion_generation = 0
+        self._suggestion_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="nm-suggestions"
+        )
+        self.diagnostics_enabled = os.environ.get("NM_DIAGNOSTICS") == "1"
+        try:
+            self._youtube_focus_script = (ASSET_DIR / "youtube-focus.js").read_text(encoding="utf-8")
+        except OSError:
+            self._youtube_focus_script = ""
         self._download_context.connect("download-started", self.on_download_started)
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -119,10 +203,12 @@ class BrowserWindow(Gtk.Window):
         toolbar.set_border_width(7)
         root.pack_start(toolbar, False, False, 0)
 
-        self.back_button = self.icon_button("go-previous", "Voltar", lambda *_: self.active_view().go_back() if self.active_view().can_go_back() else None)
-        self.forward_button = self.icon_button("go-next", "Avançar", lambda *_: self.active_view().go_forward() if self.active_view().can_go_forward() else None)
-        self.reload_button = self.icon_button("view-refresh", "Recarregar", lambda *_: self.active_view().reload())
-        self.home_button = self.icon_button("go-home", "Página inicial", lambda *_: self.active_view().load_uri(HOME_URL))
+        self.back_button = self.icon_button("go-previous", "Voltar", lambda *_: self.active_view().go_back() if self.active_view() and self.active_view().can_go_back() else None)
+        self.forward_button = self.icon_button("go-next", "Avançar", lambda *_: self.active_view().go_forward() if self.active_view() and self.active_view().can_go_forward() else None)
+        self.reload_button = self.icon_button("view-refresh", "Recarregar", lambda *_: self.active_view().reload() if self.active_view() else None)
+        self.stop_button = self.icon_button("process-stop", "Parar carregamento", lambda *_: self.stop_active_loading())
+        self.stop_button.hide()
+        self.home_button = self.icon_button("go-home", "Página inicial", lambda *_: self.navigate_to(HOME_URL))
         for button in (self.back_button, self.forward_button, self.reload_button, self.home_button):
             toolbar.pack_start(button, False, False, 0)
         toolbar.pack_start(self.icon_button("tab-new", "Nova aba (Ctrl+T)", lambda *_: self.new_tab(HOME_URL)), False, False, 0)
@@ -132,7 +218,25 @@ class BrowserWindow(Gtk.Window):
         self.address.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-search")
         self.address.connect("activate", self.on_address_activate)
         self.address.connect("icon-press", self.on_address_icon)
+        self.address_model = Gtk.ListStore(str, str)
+        self.address_completion = Gtk.EntryCompletion()
+        self.address_completion.set_model(self.address_model)
+        self.address_completion.set_text_column(0)
+        self.address_completion.set_match_func(self.match_address_suggestion)
+        self.address_completion.set_minimum_key_length(2)
+        self.address_completion.set_inline_completion(False)
+        self.address_completion.set_popup_completion(True)
+        self.address_completion.connect("match-selected", self.on_address_suggestion_selected)
+        self.address.set_completion(self.address_completion)
+        self.address.connect("changed", self.on_address_changed)
+
+        self.search_button = Gtk.MenuButton.new()
+        self.search_button.set_label(self.settings.get("search_engine", "DuckDuckGo"))
+        self.search_button.set_tooltip_text("Mecanismo de pesquisa")
+        self.search_button.set_popup(self.build_search_menu())
+        toolbar.pack_start(self.search_button, False, False, 0)
         toolbar.pack_start(self.address, True, True, 4)
+        toolbar.pack_start(self.stop_button, False, False, 0)
 
         self.favorite_button = Gtk.Button(label="☆")
         self.favorite_button.set_tooltip_text("Adicionar/remover favorito")
@@ -150,6 +254,11 @@ class BrowserWindow(Gtk.Window):
         self.menu_button.set_popup(self.build_menu())
         toolbar.pack_start(self.menu_button, False, False, 0)
 
+        self.load_progress = Gtk.ProgressBar()
+        self.load_progress.set_size_request(-1, 3)
+        self.load_progress.set_no_show_all(True)
+        root.pack_start(self.load_progress, False, False, 0)
+
         self.notebook = Gtk.Notebook()
         self.notebook.set_scrollable(True)
         self.notebook.set_group_name("navegador-maluco")
@@ -164,13 +273,42 @@ class BrowserWindow(Gtk.Window):
         self.status.set_margin_bottom(4)
         root.pack_start(self.status, False, False, 0)
 
-        self.connect("destroy", Gtk.main_quit)
+        self.connect("destroy", self.on_destroy)
         self.connect("key-press-event", self.on_key_press)
-        self.new_tab("about:blank" if os.environ.get("NM_SMOKE_TEST") else HOME_URL)
+        self._startup_page = None
         self.show_all()
 
+    def initialize_startup_tab(self):
+        """Cria o primeiro WebView depois que GTK já começou a processar eventos."""
+        if self.notebook.get_n_pages() == 0:
+            startup_view = self.new_tab("about:blank")
+            if startup_view:
+                self._startup_page = self.active_page()
+                if not os.environ.get("NM_SMOKE_TEST"):
+                    startup_view.load_html("""<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Navegador Maluco</title>
+<style>body{margin:0;background:#f4f6f8;color:#263238;font:16px system-ui,sans-serif;display:grid;min-height:100vh;place-items:center}main{text-align:center;padding:32px}h1{font-size:2rem;margin-bottom:8px}p{color:#607078}</style>
+<main><h1>Navegador Maluco</h1><p>Preparando a página inicial…</p></main></html>""", "about:blank")
+        if not os.environ.get("NM_SMOKE_TEST"):
+            GLib.timeout_add(400, self.load_initial_homepage)
+        return GLib.SOURCE_REMOVE
+
+    def load_initial_homepage(self):
+        """Adia a navegação remota até a janela já ter sido apresentada."""
+        page = self._startup_page
+        if page is None:
+            return GLib.SOURCE_REMOVE
+        self._startup_page = None
+        if (self.notebook.page_num(page) >= 0 and page is self.active_page()
+                and self.address.get_text().strip() in ("", "about:blank")):
+            view = getattr(page, "webview", None)
+            if view:
+                view.load_uri(HOME_URL)
+        return GLib.SOURCE_REMOVE
+
     def load_settings(self):
-        data = {"playback_rate": 1.0, "youtube_focus": dict(FOCUS_DEFAULTS)}
+        data = {"playback_rate": 1.0, "search_engine": "DuckDuckGo", "youtube_focus": dict(FOCUS_DEFAULTS)}
         try:
             saved = json.loads(self.config_path.read_text(encoding="utf-8"))
             data.update(saved)
@@ -181,7 +319,34 @@ class BrowserWindow(Gtk.Window):
 
     def save_settings(self):
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        self.config_path.write_text(json.dumps(self.settings, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary = self.config_path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(self.settings, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(self.config_path)
+
+    def flush_history(self):
+        try:
+            self.store.flush_history()
+        except sqlite3.Error as exc:
+            self.status.set_text(f"Histórico temporariamente indisponível: {exc}")
+        return GLib.SOURCE_CONTINUE
+
+    def on_destroy(self, *_args):
+        for source in (getattr(self, "_suspend_timer", 0),
+                       getattr(self, "_history_timer", 0),
+                       getattr(self, "_suggestion_source", 0)):
+            if source:
+                try:
+                    GLib.source_remove(source)
+                except GLib.Error:
+                    pass
+        self._suggestion_generation += 1
+        self._suggestion_executor.shutdown(wait=False)
+        try:
+            self.store.flush_history()
+            self.store.db.close()
+        except sqlite3.Error:
+            pass
+        Gtk.main_quit()
 
     @staticmethod
     def icon_button(icon, tooltip, callback):
@@ -190,6 +355,23 @@ class BrowserWindow(Gtk.Window):
         button.set_tooltip_text(tooltip)
         button.connect("clicked", callback)
         return button
+
+    def build_search_menu(self):
+        menu = Gtk.Menu()
+        for engine in SEARCH_ENGINES:
+            item = Gtk.MenuItem(label=engine)
+            item.connect("activate", self.set_search_engine, engine)
+            menu.append(item)
+        menu.show_all()
+        return menu
+
+    def set_search_engine(self, _item, engine):
+        if engine not in SEARCH_ENGINES:
+            return
+        self.settings["search_engine"] = engine
+        self.search_button.set_label(engine)
+        self.save_settings()
+        self.status.set_text(f"Pesquisa configurada: {engine}")
 
     def build_menu(self):
         menu = Gtk.Menu()
@@ -230,6 +412,21 @@ class BrowserWindow(Gtk.Window):
             if view:
                 view.reload()
             return True
+        if ctrl and event.keyval in (Gdk.KEY_f, Gdk.KEY_F):
+            self.show_find_bar()
+            return True
+        if ctrl and event.keyval in (Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_KP_Add):
+            self.adjust_zoom(0.1)
+            return True
+        if ctrl and event.keyval in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract):
+            self.adjust_zoom(-0.1)
+            return True
+        if ctrl and event.keyval in (Gdk.KEY_0, Gdk.KEY_KP_0):
+            view = self.active_view()
+            if view:
+                view.set_zoom_level(1.0)
+                self.status.set_text("Zoom: 100%")
+            return True
         if alt and event.keyval == Gdk.KEY_Left:
             view = self.active_view()
             if view and view.can_go_back():
@@ -250,27 +447,45 @@ class BrowserWindow(Gtk.Window):
         page = self.active_page()
         return getattr(page, "webview", None)
 
-    def new_tab(self, url="about:blank"):
-        if not can_create_tab(self.notebook.get_n_pages()):
-            self.status.set_text(f"Limite de {MAX_TABS} abas atingido.")
-            return None
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    def create_webview(self, page, url):
         view = WebKit2.WebView.new_with_context(self._download_context)
         page.webview = view
-        page.url = url
+        page.url = url or "about:blank"
+        page.is_suspended = False
+        page.suspending = False
         settings = view.get_settings()
         settings.set_enable_javascript(True)
         settings.set_enable_html5_database(True)
         settings.set_enable_html5_local_storage(True)
         settings.set_enable_developer_extras(False)
+        # Keep WebKit's default on-demand graphics policy. Forcing software or
+        # permanent GPU rendering can make this low-power Intel system slower.
+        page.resource_metrics = self.new_resource_metrics()
+        page.resource_started = {}
+        if self.diagnostics_enabled:
+            view.connect("resource-load-started", self.on_resource_load_started, page)
         view.connect("load-changed", self.on_load_changed, page)
         view.connect("load-failed", self.on_load_failed, page)
         view.connect("notify::title", self.on_title_changed, page)
         view.connect("decide-policy", self.on_decide_policy, page)
         view.connect("create", self.on_create_webview)
         view.connect("web-process-terminated", self.on_web_process_terminated, page)
+        view.connect("notify::estimated-load-progress", self.on_load_progress_changed, page)
+        view.connect("mouse-target-changed", self.on_mouse_target_changed, page)
         page.pack_start(view, True, True, 0)
+        self.webviews[page] = view
+        return view
 
+    def new_tab(self, url="about:blank"):
+        if not can_create_tab(self.notebook.get_n_pages()):
+            self.status.set_text(f"Limite de {MAX_TABS} abas atingido no modo econômico.")
+            return None
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        page.url = url
+        page.title = "Nova aba"
+        page.last_active = time.monotonic()
+        page.is_suspended = False
+        page.suspending = False
         tab_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
         label = Gtk.Label(label="Nova aba")
         close = Gtk.Button.new_from_icon_name("window-close", Gtk.IconSize.MENU)
@@ -285,7 +500,7 @@ class BrowserWindow(Gtk.Window):
         self.notebook.append_page(page, tab_box)
         self.notebook.set_tab_reorderable(page, True)
         self.notebook.set_current_page(self.notebook.page_num(page))
-        self.webviews[page] = view
+        view = self.create_webview(page, url)
         page.show_all()
         if url and url != "about:blank":
             view.load_uri(url)
@@ -294,13 +509,125 @@ class BrowserWindow(Gtk.Window):
             self.address.grab_focus()
         return view
 
+    def restore_page(self, page):
+        if not getattr(page, "is_suspended", False):
+            return getattr(page, "webview", None)
+        for child in page.get_children():
+            page.remove(child)
+            child.destroy()
+        url = getattr(page, "url", "about:blank")
+        view = self.create_webview(page, url)
+        page.is_suspended = False
+        page.last_active = time.monotonic()
+        page.show_all()
+        if url and url != "about:blank":
+            view.load_uri(url)
+        return view
+
+    def suspend_page(self, page):
+        view = getattr(page, "webview", None)
+        if not view or page is self.active_page():
+            return False
+        page.url = view.get_uri() or getattr(page, "url", "about:blank")
+        page.title = view.get_title() or getattr(page, "title", "Aba estacionada")
+        view.stop_loading()
+        self.webviews.pop(page, None)
+        page.remove(view)
+        view.destroy()
+        page.webview = None
+        placeholder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        placeholder.set_valign(Gtk.Align.CENTER)
+        label = Gtk.Label(label="Aba estacionada para economizar memória.\nClique para recarregar a página.")
+        label.set_justify(Gtk.Justification.CENTER)
+        restore = Gtk.Button(label="Restaurar página")
+        restore.connect("clicked", lambda *_: self.restore_page(page))
+        placeholder.pack_start(label, False, False, 0)
+        placeholder.pack_start(restore, False, False, 0)
+        page.pack_start(placeholder, True, True, 0)
+        page.is_suspended = True
+        page.suspending = False
+        page.tab_label.set_text((page.title or "Aba estacionada")[:34] + " ·")
+        page.show_all()
+        return True
+
+    def on_suspend_safety_checked(self, view, result, context):
+        page, candidates = context
+        page.suspending = False
+        try:
+            safe = view.run_javascript_finish(result).get_js_value().to_boolean()
+        except (GLib.Error, AttributeError, TypeError):
+            safe = False
+        if (safe and page is not self.active_page() and page in self.webviews
+                and len(self.webviews) > self._resident_limit):
+            self.suspend_page(page)
+        elif len(self.webviews) > self._resident_limit:
+            # Uma aba insegura não pode bloquear a análise das próximas candidatas.
+            self.check_next_suspend_candidate(candidates)
+
+    def check_next_suspend_candidate(self, candidates):
+        safety_script = """(() => {
+          const playing = Array.from(document.querySelectorAll('video,audio'))
+            .some(media => !media.paused && !media.ended);
+          const focused = document.activeElement &&
+            /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+          return !playing && !focused && !window.__nmDirtyForm;
+        })()"""
+        while candidates and len(self.webviews) > self._resident_limit:
+            page = candidates.pop(0)
+            if (page is self.active_page() or page not in self.webviews
+                    or getattr(page, "suspending", False)):
+                continue
+            view = self.webviews.get(page)
+            if not view or view.is_loading():
+                continue
+            page.suspending = True
+            view.run_javascript(
+                safety_script, None, self.on_suspend_safety_checked,
+                (page, candidates)
+            )
+            return
+
+    def current_memory_policy(self):
+        try:
+            meminfo = Path("/proc/meminfo").read_text(encoding="ascii")
+            pressure = Path("/proc/pressure/memory").read_text(encoding="ascii")
+            level = memory_pressure_level(meminfo, pressure)
+        except OSError:
+            level = "normal"
+        if level == "critical":
+            return 1, CRITICAL_PRESSURE_SUSPEND_AFTER_SECONDS, level
+        if level == "high":
+            return 2, HIGH_PRESSURE_SUSPEND_AFTER_SECONDS, level
+        return MAX_RESIDENT_TABS, SUSPEND_AFTER_SECONDS, level
+
+    def enforce_resident_limit(self):
+        if not hasattr(self, "webviews"):
+            return GLib.SOURCE_REMOVE
+        self._resident_limit, idle_threshold, pressure_level = self.current_memory_policy()
+        if len(self.webviews) <= self._resident_limit:
+            return GLib.SOURCE_CONTINUE
+        now = time.monotonic()
+        candidates = sorted(
+            (page for page in self.webviews
+             if page is not self.active_page()
+             and not getattr(page, "suspending", False)
+             and now - getattr(page, "last_active", now) >= idle_threshold),
+            key=lambda page: getattr(page, "last_active", 0)
+        )
+        if not candidates:
+            return GLib.SOURCE_CONTINUE
+        self.check_next_suspend_candidate(candidates)
+        return GLib.SOURCE_CONTINUE
+
     def close_tab_button(self, _button, page):
         index = self.notebook.page_num(page)
         if index >= 0:
-            view = page.webview
-            view.stop_loading()
-            view.destroy()
-            self.webviews.pop(page, None)
+            view = getattr(page, "webview", None)
+            if view:
+                view.stop_loading()
+                self.webviews.pop(page, None)
+                page.remove(view)
+                view.destroy()
             self.notebook.remove_page(index)
         if self.notebook.get_n_pages() == 0:
             self.new_tab(HOME_URL)
@@ -335,49 +662,233 @@ class BrowserWindow(Gtk.Window):
             return False
         return False
 
+    def update_loading_ui(self, view):
+        loading = bool(view and view.is_loading())
+        if loading:
+            self.reload_button.hide()
+            self.stop_button.show()
+            self.load_progress.show()
+            self.load_progress.set_fraction(max(0.02, view.get_estimated_load_progress()))
+        else:
+            self.stop_button.hide()
+            self.reload_button.show()
+            self.load_progress.hide()
+            self.load_progress.set_fraction(0.0)
+
+    def stop_active_loading(self):
+        view = self.active_view()
+        if view and view.is_loading():
+            view.stop_loading()
+            self.status.set_text("Carregamento interrompido.")
+
+    def on_load_progress_changed(self, view, _param, page):
+        if page is self.active_page() and view.is_loading():
+            self.load_progress.set_fraction(max(0.02, view.get_estimated_load_progress()))
+
+    def on_mouse_target_changed(self, _view, hit_test, _modifiers, page):
+        if page is not self.active_page():
+            return
+        try:
+            if hit_test.context_is_link():
+                target = hit_test.get_link_uri()
+                if target:
+                    self.status.set_text(target[:220])
+        except (AttributeError, TypeError):
+            pass
+
+    @staticmethod
+    def new_resource_metrics():
+        return {
+            "started": 0, "responses": 0, "finished": 0, "failed": 0,
+            "redirects": 0, "bytes": 0, "status_errors": 0,
+            "slowest_ms": 0.0, "total_ms": 0.0,
+        }
+
+    def on_resource_load_started(self, _view, resource, page):
+        """Registra somente tempos e contadores; nunca persiste URLs ou conteúdo."""
+        key = id(resource)
+        page.resource_started[key] = time.monotonic()
+        page.resource_metrics["started"] += 1
+        resource.connect("sent-request", self.on_resource_sent_request, page)
+        resource.connect("notify::response", self.on_resource_received_response, page)
+        resource.connect("finished", self.on_resource_finished, page)
+        resource.connect("failed", self.on_resource_failed, page)
+
+    def on_resource_sent_request(self, _resource, _request, redirected_response, page):
+        if redirected_response is not None:
+            page.resource_metrics["redirects"] += 1
+
+    def on_resource_received_response(self, resource, _property, page):
+        response = resource.get_response()
+        if response is None:
+            return
+        metrics = page.resource_metrics
+        metrics["responses"] += 1
+        try:
+            status = int(response.get_status_code())
+            if status >= 400:
+                metrics["status_errors"] += 1
+        except (AttributeError, TypeError, ValueError):
+            pass
+        try:
+            length = int(response.get_content_length())
+            if length > 0:
+                metrics["bytes"] += length
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+    def on_resource_finished(self, resource, page):
+        started = page.resource_started.pop(id(resource), None)
+        if started is None:
+            return
+        elapsed_ms = max(0.0, (time.monotonic() - started) * 1000)
+        metrics = page.resource_metrics
+        metrics["finished"] += 1
+        metrics["total_ms"] += elapsed_ms
+        metrics["slowest_ms"] = max(metrics["slowest_ms"], elapsed_ms)
+
+    def on_resource_failed(self, resource, _error, page):
+        page.resource_started.pop(id(resource), None)
+        page.resource_metrics["failed"] += 1
+
     def on_load_changed(self, view, event, page):
         if event == WebKit2.LoadEvent.STARTED:
+            page.load_started_at = time.monotonic()
+            if self.diagnostics_enabled:
+                page.resource_metrics = self.new_resource_metrics()
+                page.resource_started = {}
             page.url = view.get_uri() or ""
             if page is self.active_page():
                 self.address.set_text(page.url)
-                self.status.set_text("Carregando…")
+                self.status.set_text("Conectando e carregando…")
+                self.load_progress.set_fraction(0.02)
+                self.update_loading_ui(view)
+        elif event == WebKit2.LoadEvent.REDIRECTED:
+            page.url = view.get_uri() or page.url
+            if page is self.active_page():
+                self.status.set_text("Redirecionando…")
+        elif event == WebKit2.LoadEvent.COMMITTED:
+            page.url = view.get_uri() or page.url
+            if page is self.active_page():
+                self.address.set_text(page.url)
+                self.status.set_text("Recebendo conteúdo…")
         elif event == WebKit2.LoadEvent.FINISHED:
             url = view.get_uri() or ""
             title = view.get_title() or url
             page.url = url
+            page.title = title
             self.store.add_history(url, title)
+            elapsed = max(0.0, time.monotonic() - getattr(page, "load_started_at", time.monotonic()))
             if page is self.active_page():
                 self.address.set_text(url)
                 self.favorite_button.set_label("★" if self.store.is_favorite(url) else "☆")
-                self.status.set_text(title[:160])
+                self.status.set_text(f"Concluído em {elapsed:.1f} s — {title[:120]}")
+                self.status.set_tooltip_text(
+                    "Tempo total observado pelo navegador, da navegação iniciada até o evento FINISHED. "
+                    "Não representa apenas rede nem separa DNS, servidor e renderização."
+                )
+                self.update_loading_ui(view)
+                self.load_progress.set_fraction(1.0)
             self.inject_page_features(view, url)
+            if self.diagnostics_enabled:
+                view.run_javascript("""
+                (() => {
+                  const n = performance.getEntriesByType('navigation')[0];
+                  if (!n) return JSON.stringify(null);
+                  const resources = performance.getEntriesByType('resource');
+                  const delta = (end, start) => {
+                    const value = Number(n[end]) - Number(n[start]);
+                    return Number.isFinite(value) && value > 0 ? value : 0;
+                  };
+                  return JSON.stringify({
+                    dns_ms: delta('domainLookupEnd', 'domainLookupStart'),
+                    connect_ms: delta('connectEnd', 'connectStart'),
+                    tls_ms: n.secureConnectionStart > 0
+                      ? Math.max(0, n.connectEnd - n.secureConnectionStart) : null,
+                    ttfb_ms: delta('responseStart', 'requestStart'),
+                    dom_ms: Number.isFinite(n.domContentLoadedEventEnd)
+                      ? n.domContentLoadedEventEnd : null,
+                    resource_count: resources.length,
+                    transfer_bytes: resources.reduce((sum, item) => sum + (item.transferSize || 0), 0)
+                  });
+                })()
+                """, None, self.on_navigation_metrics, page)
+
+    def on_navigation_metrics(self, view, result, page):
+        """Coleta tempos expostos pela Navigation Timing API sem registrar URLs."""
+        try:
+            raw = view.run_javascript_finish(result).get_js_value().to_string()
+            metrics = json.loads(raw)
+            if not isinstance(metrics, dict):
+                return
+        except (GLib.Error, AttributeError, TypeError, ValueError):
+            return
+        page.load_metrics = metrics
+        if page is not self.active_page():
+            return
+        labels = (
+            ("DNS", metrics.get("dns_ms")),
+            ("conexão", metrics.get("connect_ms")),
+            ("TLS", metrics.get("tls_ms")),
+            ("TTFB", metrics.get("ttfb_ms")),
+            ("DOM", metrics.get("dom_ms")),
+        )
+        details = " · ".join(f"{name} {value:.0f} ms" for name, value in labels if value is not None)
+        resources = metrics.get("resource_count", 0)
+        transfer = metrics.get("transfer_bytes", 0)
+        resource = getattr(page, "resource_metrics", self.new_resource_metrics())
+        completed = resource["finished"]
+        average_ms = resource["total_ms"] / completed if completed else 0.0
+        self.status.set_tooltip_text(
+            f"Navigation Timing: {details}. Recursos: {resources}; "
+            f"bytes via Resource Timing: {transfer}. "
+            f"WebKit: {resource['started']} iniciados, {completed} concluídos, "
+            f"{resource['failed']} falhas, {resource['status_errors']} respostas HTTP >= 400, "
+            f"{resource['redirects']} redirecionamentos, {resource['bytes']} bytes informados. "
+            f"Duração média: {average_ms:.0f} ms; maior: {resource['slowest_ms']:.0f} ms. "
+            "Os bytes por resposta podem ser estimados e não equivalem ao tráfego real; "
+            "valores cross-origin da Resource Timing API podem ser limitados. "
+            "Nenhuma URL, consulta de pesquisa ou conteúdo é armazenado."
+        )
 
     def inject_page_features(self, view, url):
         rate = float(self.settings.get("playback_rate", 1.0))
-        media_script = """
-        (() => {
-          const rate = RATE;
-          const apply = root => {
-            if (root && root.querySelectorAll) root.querySelectorAll('video,audio').forEach(m => {
-              try { m.playbackRate = rate; m.defaultPlaybackRate = rate; } catch (_) {}
-            });
-          };
-          apply(document);
-          document.addEventListener('play', e => {
-            if (e.target instanceof HTMLMediaElement) {
-              try { e.target.playbackRate = rate; } catch (_) {}
-            }
-          }, true);
-          const observer = new MutationObserver(records => records.forEach(r =>
-            r.addedNodes.forEach(n => { if (n.nodeType === 1) apply(n); })));
-          observer.observe(document.documentElement, {childList:true, subtree:true});
-        })();
-        """.replace("RATE", str(rate))
         try:
+            # Tracking leve para impedir o estacionamento de páginas com formulários alterados.
+            view.run_javascript("""
+                (() => {
+                  if (window.__nmDirtyTrackingInstalled) return;
+                  window.__nmDirtyTrackingInstalled = true;
+                  window.__nmDirtyForm = false;
+                  document.addEventListener('input', () => { window.__nmDirtyForm = true; }, true);
+                  document.addEventListener('change', () => { window.__nmDirtyForm = true; }, true);
+                })();
+                """, None, None, None)
+
+            # Em 1x não há nada para ajustar. Para outras velocidades, usa
+            # delegação de eventos, sem MutationObserver varrendo o DOM inteiro.
+            media_script = """
+            (() => {
+              const requestedRate = RATE;
+              let state = window.__nmPlaybackRateState;
+              if (!state && requestedRate === 1) return;
+              if (!state) {
+                state = window.__nmPlaybackRateState = {rate: requestedRate};
+                state.apply = media => {
+                  if (!(media instanceof HTMLMediaElement)) return;
+                  try { media.playbackRate = state.rate; media.defaultPlaybackRate = state.rate; } catch (_) {}
+                };
+                document.addEventListener('play', event => state.apply(event.target), true);
+                document.addEventListener('loadedmetadata', event => state.apply(event.target), true);
+              }
+              state.rate = requestedRate;
+              document.querySelectorAll('video,audio').forEach(state.apply);
+            })();
+            """.replace("RATE", str(rate))
             view.run_javascript(media_script, None, None, None)
+
             if urlparse(url).hostname in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
-                script_path = ASSET_DIR / "youtube-focus.js"
-                if script_path.exists():
+                if self._youtube_focus_script:
                     defaults = json.dumps(self.settings["youtube_focus"], ensure_ascii=False)
                     shim = """
                     (() => {
@@ -400,38 +911,159 @@ class BrowserWindow(Gtk.Window):
                       }};
                     })();
                     """.replace("DEFAULTS", defaults)
-                    content = script_path.read_text(encoding="utf-8")
-                    view.run_javascript(shim + "\n" + content, None, None, None)
+                    focus_script = (
+                        "if (!window.__nmYouTubeFocusInjected) {"
+                        "window.__nmYouTubeFocusInjected = true;\n"
+                        + shim + "\n" + self._youtube_focus_script + "\n}"
+                    )
+                    view.run_javascript(focus_script, None, None, None)
         except (GLib.Error, TypeError) as exc:
             self.status.set_text(f"Não foi possível aplicar um recurso da página: {exc}")
 
-    def on_load_failed(self, _view, _event, uri, error, page):
-        self.status.set_text(f"Falha ao carregar {uri}: {error.message}")
+    def on_load_failed(self, view, _event, uri, error, page):
+        if page is self.active_page():
+            self.update_loading_ui(view)
+            self.status.set_text(f"Falha ao carregar {uri}: {error.message}")
         return False
 
     def on_title_changed(self, view, _param, page):
         title = view.get_title() or "Nova aba"
+        page.title = title
+        page.url = view.get_uri() or getattr(page, "url", "")
         page.tab_label.set_text(title[:34])
 
     def on_switch_page(self, _notebook, page, _number):
         if not page:
             return
-        self.address.set_text(page.webview.get_uri() or "")
-        url = page.webview.get_uri() or ""
-        self.favorite_button.set_label("★" if self.store.is_favorite(url) else "☆")
-        self.status.set_text(page.webview.get_title() or "Pronto")
-
-    def on_address_activate(self, entry):
-        try:
-            uri = normalize_input(entry.get_text())
-        except ValueError as exc:
-            self.status.set_text(str(exc))
+        view = self.restore_page(page) if getattr(page, "is_suspended", False) else getattr(page, "webview", None)
+        page.last_active = time.monotonic()
+        if not view:
             return
+        self.update_loading_ui(view)
+        url = view.get_uri() or getattr(page, "url", "")
+        self.address.set_text(url)
+        self.favorite_button.set_label("★" if self.store.is_favorite(url) else "☆")
+        self.status.set_text(view.get_title() or "Pronto")
+
+    def match_address_suggestion(self, _completion, key, tree_iter, model):
+        candidate = model.get_value(tree_iter, 0)
+        return key.casefold() in candidate.casefold()
+
+    def on_address_changed(self, entry):
+        if getattr(self, "_selecting_suggestion", False):
+            return
+        self._suggestion_generation += 1
+        self.address_model.clear()
+        if self._suggestion_source:
+            GLib.source_remove(self._suggestion_source)
+            self._suggestion_source = 0
+        if len(entry.get_text().strip()) >= 2:
+            self._suggestion_source = GLib.timeout_add(180, self.update_address_suggestions, entry)
+
+    def update_address_suggestions(self, entry):
+        self._suggestion_source = 0
+        query = entry.get_text().strip()
+        if len(query) < 2 or entry is not self.address:
+            return GLib.SOURCE_REMOVE
+        generation = self._suggestion_generation
+        database_path = str(DATA_DIR / "browser.sqlite3")
+        future = self._suggestion_executor.submit(
+            BrowserStore.search_suggestions_background, database_path, query, 8
+        )
+        future.add_done_callback(
+            lambda completed: GLib.idle_add(
+                self.apply_address_suggestions, query, generation, completed
+            )
+        )
+        return GLib.SOURCE_REMOVE
+
+    def apply_address_suggestions(self, query, generation, future):
+        if generation != self._suggestion_generation or not self.get_visible():
+            return GLib.SOURCE_REMOVE
+        try:
+            rows = future.result()
+        except (sqlite3.Error, OSError) as exc:
+            if self.diagnostics_enabled:
+                print(f"[Navegador Maluco] autocomplete indisponível: {exc}", file=sys.stderr)
+            rows = []
+        for page in self.webviews:
+            url = getattr(page, "url", "")
+            title = getattr(page, "title", "")
+            if query.casefold() in (url + " " + title).casefold():
+                rows.insert(0, (url, title or url))
+        seen = set()
+        for url, title in rows:
+            if url and url not in seen:
+                self.address_model.append([f"{(title or url)[:55]} — {url[:90]}", url])
+                seen.add(url)
+            if len(seen) >= 8:
+                break
+        return GLib.SOURCE_REMOVE
+
+    def on_address_suggestion_selected(self, _completion, model, tree_iter):
+        target = model.get_value(tree_iter, 1)
+        self._suggestion_generation += 1
+        self._selecting_suggestion = True
+        self.address.set_text(target)
+        self._selecting_suggestion = False
+        self.navigate_to(target)
+        return True
+
+    def navigate_to(self, uri):
         view = self.active_view()
         if view:
             view.load_uri(uri)
         else:
             self.new_tab(uri)
+
+    def on_address_activate(self, entry):
+        self._suggestion_generation += 1
+        try:
+            uri = normalize_input(entry.get_text(), self.settings.get("search_engine", "DuckDuckGo"))
+        except ValueError as exc:
+            self.status.set_text(str(exc))
+            return
+        self.navigate_to(uri)
+
+    def adjust_zoom(self, delta):
+        view = self.active_view()
+        if not view:
+            return
+        level = min(2.0, max(0.5, view.get_zoom_level() + delta))
+        view.set_zoom_level(level)
+        self.status.set_text(f"Zoom: {round(level * 100)}%")
+
+    def show_find_bar(self):
+        view = self.active_view()
+        if not view:
+            return
+        controller = view.get_find_controller()
+        dialog = Gtk.Dialog(title="Localizar nesta página", transient_for=self, flags=Gtk.DialogFlags.DESTROY_WITH_PARENT)
+        dialog.add_button("Anterior", -10)
+        dialog.add_button("Próximo", -11)
+        dialog.add_button("Fechar", Gtk.ResponseType.CLOSE)
+        dialog.set_default_size(420, 90)
+        entry = Gtk.Entry()
+        entry.set_placeholder_text("Texto para localizar")
+        dialog.get_content_area().pack_start(entry, True, True, 8)
+        def search_current(*_args):
+            query = entry.get_text().strip()
+            if query:
+                controller.search(query, WebKit2.FindOptions.CASE_INSENSITIVE, 1000)
+            else:
+                controller.search_finish()
+        entry.connect("changed", search_current)
+        def on_response(_dialog, response):
+            if response == -10:
+                controller.search_previous()
+            elif response == -11:
+                controller.search_next()
+            else:
+                controller.search_finish()
+                dialog.destroy()
+        dialog.connect("response", on_response)
+        dialog.show_all()
+        entry.grab_focus()
 
     def on_address_icon(self, _entry, _position, _event):
         self.address.grab_focus()
@@ -582,9 +1214,37 @@ class BrowserWindow(Gtk.Window):
 
 
 def main():
+    smoke_test = "--smoke-test" in sys.argv
+    if smoke_test:
+        sys.argv.remove("--smoke-test")
     Gtk.init(sys.argv)
     window = BrowserWindow()
     window.show_all()
+    # Prioridade padrão idle: deixa GTK desenhar a janela e processar eventos
+    # antes da inicialização potencialmente pesada do WebKitGTK.
+    GLib.idle_add(window.initialize_startup_tab)
+
+    if smoke_test:
+        result = {"webview_ready": False}
+
+        def check_startup():
+            if window.active_view() is not None:
+                result["webview_ready"] = True
+                window.destroy()
+                return GLib.SOURCE_REMOVE
+            return GLib.SOURCE_CONTINUE
+
+        def stop_after_timeout():
+            window.destroy()
+            return GLib.SOURCE_REMOVE
+
+        GLib.timeout_add(100, check_startup)
+        GLib.timeout_add_seconds(15, stop_after_timeout)
+        Gtk.main()
+        if not result["webview_ready"]:
+            raise SystemExit("WebView não inicializou dentro de 15 segundos.")
+        return
+
     Gtk.main()
 
 

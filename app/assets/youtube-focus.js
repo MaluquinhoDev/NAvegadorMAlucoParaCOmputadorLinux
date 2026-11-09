@@ -250,16 +250,36 @@
     document.addEventListener("yt-page-data-updated", scheduleApply, true);
     window.addEventListener("popstate", scheduleApply, true);
     if (document.documentElement && window.MutationObserver) {
+      var relevantSelectors = [
+        "ytd-shelf-renderer", "ytd-horizontal-card-list-renderer",
+        "ytd-search-pyv-renderer", "ytd-guide-section-renderer",
+        "ytd-backstage-post-renderer", "ytm-backstage-post-renderer",
+        "ytd-radio-renderer", "ytd-compact-radio-renderer",
+        "ytd-reel-shelf-renderer", "ytd-reel-item-renderer",
+        "ytd-rich-item-renderer", "ytd-rich-section-renderer"
+      ].join(",");
+      // Watch/comments são reconhecidos ao serem inseridos, mas não observados
+      // como ancestrais: são áreas grandes e muito dinâmicas.
+      var insertedSelectors = relevantSelectors + ",ytd-watch-flexy,ytd-comments";
       var observer = new MutationObserver(function (records) {
         var relevant = records.some(function (record) {
-          if (record.target && record.target.closest &&
-              record.target.closest("#nm-youtube-tools,#" + styleId)) return false;
+          var target = record.target;
+          if (target && target.nodeType !== 1) target = target.parentElement;
+          if (target && target.closest &&
+              target.closest("#nm-youtube-tools,#" + styleId)) return false;
+          // Conteúdo inserido dentro de uma prateleira/post já existente também
+          // precisa reagendar a filtragem, mesmo que o nó novo seja texto ou span.
+          if (target && target.closest && target.closest(relevantSelectors)) return true;
           return Array.prototype.some.call(record.addedNodes || [], function (node) {
-            return !(node.nodeType === 1 &&
-              (node.id === styleId || node.id === "nm-youtube-tools" ||
-               (node.closest && node.closest("#nm-youtube-tools"))));
-          }) || record.removedNodes.length > 0;
+            if (node.nodeType !== 1) return false;
+            if (node.id === styleId || node.id === "nm-youtube-tools" ||
+                (node.closest && node.closest("#nm-youtube-tools"))) return false;
+            return (node.matches && node.matches(insertedSelectors)) ||
+              (node.querySelector && node.querySelector(insertedSelectors));
+          });
         });
+        // Removed nodes cannot introduce new content that needs hiding. Ignoring
+        // removals avoids repeatedly scanning the entire YouTube document.
         if (relevant) scheduleApply();
       });
       observer.observe(document.documentElement, { childList: true, subtree: true });

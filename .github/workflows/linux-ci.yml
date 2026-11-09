@@ -23,8 +23,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 nodejs dpkg-dev zip xvfb
 
-      - name: Validate Python syntax
-        run: python3 -m compileall -q app tests
+      - name: Validate Python and shell syntax
+        run: |
+          python3 -m compileall -q app tests
+          bash -n scripts/build-deb.sh scripts/build-native.sh scripts/build-native-deb.sh scripts/benchmark-startup.sh scripts/diagnose-performance.sh
 
       - name: Verify GTK and WebKitGTK bindings
         run: |
@@ -32,7 +34,30 @@ jobs:
 
       - name: Smoke-test desktop window
         run: |
-          NM_SMOKE_TEST=1 xvfb-run -a /usr/bin/python3 -c "import sys; sys.path.insert(0, 'app'); from gi.repository import Gtk; Gtk.init([]); from navegador_maluco import BrowserWindow; window = BrowserWindow(); assert window.active_view() is not None; window.destroy(); print('GTK/WebKitGTK browser window created')"
+          NM_SMOKE_TEST=1 xvfb-run -a /usr/bin/python3 - <<'PY'
+          import sys
+          import gi
+
+          gi.require_version("Gtk", "3.0")
+          gi.require_version("WebKit2", "4.1")
+          from gi.repository import GLib, Gtk
+
+          Gtk.init([])
+          sys.path.insert(0, "app")
+          from navegador_maluco import BrowserWindow
+
+          window = BrowserWindow()
+          window.show_all()
+          GLib.idle_add(window.initialize_startup_tab)
+
+          context = GLib.MainContext.default()
+          while window.active_view() is None:
+              context.iteration(True)
+
+          assert window.active_view() is not None
+          window.destroy()
+          print("GTK/WebKitGTK browser window created")
+          PY
 
       - name: Run unit tests
         run: python3 -m unittest discover -s tests -v
@@ -41,15 +66,75 @@ jobs:
         run: bash scripts/check-extension.sh
 
       - name: Build .deb package
-        run: APP_VERSION=0.1.0 bash scripts/build-deb.sh
+        run: APP_VERSION=0.4.4 bash scripts/build-deb.sh
 
       - name: Inspect Debian package
-        run: dpkg-deb --info dist/navegador-maluco_0.1.0_all.deb
+        run: dpkg-deb --info dist/navegador-maluco_0.4.4_all.deb
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
           name: navegador-maluco-linux-mint-deb
-          path: dist/navegador-maluco_0.1.0_all.deb
+          path: dist/navegador-maluco_0.4.4_all.deb
+          if-no-files-found: error
+          retention-days: 90
+
+  build-native-experimental:
+    name: Nuitka native build + Debian package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GTK, WebKitGTK and compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 python3-venv python3-dev build-essential patchelf xvfb
+
+      - name: Install Nuitka in isolated environment
+        run: |
+          python3 -m venv --system-site-packages .venv-nuitka
+          .venv-nuitka/bin/python -m pip install --upgrade pip
+          .venv-nuitka/bin/python -m pip install "Nuitka>=2.7,<5"
+
+      - name: Compile GTK/WebKitGTK application to native executable
+        run: PYTHON=.venv-nuitka/bin/python bash scripts/build-native.sh
+
+      - name: Smoke-test compiled executable
+        run: timeout 25s xvfb-run -a dist/native/navegador-maluco-native --smoke-test
+
+      - name: Compare Python and native startup (5 runs each)
+        run: BENCHMARK_RUNS=5 bash scripts/benchmark-startup.sh
+
+      - name: Build Debian package from the compiled executable
+        run: APP_VERSION=0.4.4 bash scripts/build-native-deb.sh
+
+      - name: Install and smoke-test the native Debian package
+        run: |
+          sudo apt-get install -y ./dist/navegador-maluco-native_0.4.4_amd64.deb
+          timeout 25s xvfb-run -a navegador-maluco-native --smoke-test
+          dpkg-query -W navegador-maluco-native
+
+      - name: Upload experimental native executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: navegador-maluco-native-ubuntu-24.04-experimental
+          path: dist/native/**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload installable native Debian package
+        uses: actions/upload-artifact@v4
+        with:
+          name: navegador-maluco-native-deb-ubuntu-24.04-amd64
+          path: dist/navegador-maluco-native_0.4.4_amd64.deb
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload startup benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: navegador-maluco-startup-benchmark
+          path: dist/startup-benchmark.csv
           if-no-files-found: error
           retention-days: 90
