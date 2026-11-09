@@ -70,7 +70,7 @@ O estacionamento é conservador: a meta de três WebViews residentes pode ser te
 | Falkon | Navegador gráfico baseado em Chromium, listado entre as opções Linux. | Referência de navegador leve, mas sem copiar recursos que aumentem dependências ou consumo. |
 | qutebrowser | Navegação orientada ao teclado. | Atalhos de localizar e zoom foram incorporados; o restante do modelo modal não foi adotado. |
 
-A implementação 0.4.1 combina sugestões privadas locais, seleção de mecanismo de pesquisa, progresso de carregamento, interrupção de navegação, localizar na página e controle de zoom. O indicador usa a estimativa fornecida pelo WebKitGTK; não representa uma medição exata do tempo restante.
+A implementação atual combina sugestões privadas locais, seleção de mecanismo de pesquisa, progresso de carregamento, interrupção de navegação, localizar na página e controle de zoom. O indicador usa a estimativa fornecida pelo WebKitGTK; não representa uma medição exata do tempo restante.
 
 Fontes técnicas:
 - [Mozilla — arquitetura da barra de endereço](https://firefox-source-docs.mozilla.org/browser/urlbar/index.html)
