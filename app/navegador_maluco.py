@@ -166,7 +166,7 @@ class BrowserWindow(Gtk.Window):
 
         self.connect("destroy", Gtk.main_quit)
         self.connect("key-press-event", self.on_key_press)
-        self.new_tab(HOME_URL)
+        self.new_tab("about:blank" if os.environ.get("NM_SMOKE_TEST") else HOME_URL)
         self.show_all()
 
     def load_settings(self):
@@ -582,6 +582,7 @@ class BrowserWindow(Gtk.Window):
 
 
 def main():
+    Gtk.init(sys.argv)
     window = BrowserWindow()
     window.show_all()
     Gtk.main()
