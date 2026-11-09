@@ -164,6 +164,7 @@ class BrowserWindow(Gtk.Window):
         self.address_completion = Gtk.EntryCompletion()
         self.address_completion.set_model(self.address_model)
         self.address_completion.set_text_column(0)
+        self.address_completion.set_match_func(self.match_address_suggestion)
         self.address_completion.set_minimum_key_length(2)
         self.address_completion.set_inline_completion(False)
         self.address_completion.set_popup_completion(True)
@@ -664,6 +665,10 @@ class BrowserWindow(Gtk.Window):
         self.address.set_text(url)
         self.favorite_button.set_label("★" if self.store.is_favorite(url) else "☆")
         self.status.set_text(view.get_title() or "Pronto")
+
+    def match_address_suggestion(self, _completion, key, tree_iter, model):
+        candidate = model.get_value(tree_iter, 0)
+        return key.casefold() in candidate.casefold()
 
     def on_address_changed(self, entry):
         query = entry.get_text().strip()
