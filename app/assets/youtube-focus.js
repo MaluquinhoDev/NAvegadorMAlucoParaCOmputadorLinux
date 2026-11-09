@@ -256,9 +256,11 @@
         "ytd-backstage-post-renderer", "ytm-backstage-post-renderer",
         "ytd-radio-renderer", "ytd-compact-radio-renderer",
         "ytd-reel-shelf-renderer", "ytd-reel-item-renderer",
-        "ytd-rich-item-renderer", "ytd-rich-section-renderer",
-        "ytd-watch-flexy", "ytd-comments"
+        "ytd-rich-item-renderer", "ytd-rich-section-renderer"
       ].join(",");
+      // Watch/comments são reconhecidos ao serem inseridos, mas não observados
+      // como ancestrais: são áreas grandes e muito dinâmicas.
+      var insertedSelectors = relevantSelectors + ",ytd-watch-flexy,ytd-comments";
       var observer = new MutationObserver(function (records) {
         var relevant = records.some(function (record) {
           var target = record.target;
@@ -272,8 +274,8 @@
             if (node.nodeType !== 1) return false;
             if (node.id === styleId || node.id === "nm-youtube-tools" ||
                 (node.closest && node.closest("#nm-youtube-tools"))) return false;
-            return (node.matches && node.matches(relevantSelectors)) ||
-              (node.querySelector && node.querySelector(relevantSelectors));
+            return (node.matches && node.matches(insertedSelectors)) ||
+              (node.querySelector && node.querySelector(insertedSelectors));
           });
         });
         // Removed nodes cannot introduce new content that needs hiding. Ignoring
