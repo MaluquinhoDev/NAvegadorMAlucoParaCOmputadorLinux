@@ -14,7 +14,7 @@ mkdir -p "$OUT"
 
 "$PYTHON" -m nuitka \
     --mode=accelerated \
-    --follow-imports \
+    --follow-import-to=core \
     --jobs=2 \
     --output-dir="$OUT" \
     --output-filename=navegador-maluco-native \
