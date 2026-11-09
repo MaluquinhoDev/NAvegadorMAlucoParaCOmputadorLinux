@@ -7,6 +7,15 @@
 - **Diagnóstico de recursos desativado por padrão:** os sinais de cada recurso WebKit e a coleta JavaScript de Navigation Timing só são conectados quando NM_DIAGNOSTICS=1. O perfil normal deixa de executar callbacks extras para cada recurso. Para habilitar diagnóstico temporário, inicie o aplicativo com essa variável de ambiente.
 - **Limitação:** a construção do WebView ainda ocorre na thread principal, mas somente depois que a janela já foi apresentada e o ciclo de eventos está ativo. A navegação e a renderização da página são gerenciadas pelo WebKitGTK. O desempenho físico ainda precisa ser medido no computador-alvo.
 
+
+## Correção de responsividade do autocomplete
+
+- A espera de 180 ms após a última tecla continua evitando consultas por caractere, mas a consulta SQLite agora roda em um executor dedicado com uma conexão SQLite própria. A thread GTK recebe apenas o resultado pronto por `GLib.idle_add`.
+- A conexão do worker é independente da conexão principal: não há compartilhamento de conexão SQLite entre threads.
+- Resultados de consultas antigas são descartados quando o texto muda ou a navegação é confirmada, evitando que sugestões atrasadas reapareçam depois da ação do usuário.
+- O worker usa uma única thread para limitar concorrência e consumo de memória em máquinas com 4 GB.
+- **Limite ainda existente:** gravação periódica do histórico e algumas operações pequenas de favoritos continuam síncronas. Esta alteração remove especificamente a consulta do autocomplete da thread da interface; não resolve todos os bloqueios potenciais do GTK.
+
 ## Diagnóstico por recurso da versão 0.4.2
 
 - A WebView acompanha os eventos `resource-load-started`, `sent-request`, `notify::response`, `finished` e `failed` do WebKitGTK.
