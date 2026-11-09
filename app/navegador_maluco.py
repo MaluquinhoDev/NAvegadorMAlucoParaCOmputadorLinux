@@ -718,7 +718,7 @@ class BrowserWindow(Gtk.Window):
                       }};
                     })();
                     """.replace("DEFAULTS", defaults)
-                    view.run_javascript(shim + "\\n" + self._youtube_focus_script, None, None, None)
+                    view.run_javascript(shim + "\n" + self._youtube_focus_script, None, None, None)
         except (GLib.Error, TypeError) as exc:
             self.status.set_text(f"Não foi possível aplicar um recurso da página: {exc}")
 
