@@ -727,8 +727,8 @@ class BrowserWindow(Gtk.Window):
                     """.replace("DEFAULTS", defaults)
                     focus_script = (
                         "if (!window.__nmYouTubeFocusInjected) {"
-                        "window.__nmYouTubeFocusInjected = true;\\n"
-                        + shim + "\\n" + self._youtube_focus_script + "\\n}"
+                        "window.__nmYouTubeFocusInjected = true;\n"
+                        + shim + "\n" + self._youtube_focus_script + "\n}"
                     )
                     view.run_javascript(focus_script, None, None, None)
         except (GLib.Error, TypeError) as exc:
