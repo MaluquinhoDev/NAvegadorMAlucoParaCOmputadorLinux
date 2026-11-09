@@ -15,7 +15,7 @@ A cada atualização aprovada pelo GitHub Actions, o pacote Debian `.deb` é pub
 5. No terminal, entre na pasta extraída e execute:
 
 ```bash
-sudo apt install ./navegador-maluco_0.4.0_all.deb
+sudo apt install ./navegador-maluco_0.4.1_all.deb
 ```
 
 O gerenciador de pacotes instala as dependências GTK/WebKitGTK. Depois, abra **Navegador Maluco** pelo menu de aplicativos ou execute:
@@ -28,7 +28,7 @@ O pacote foi configurado para sistemas Debian/Ubuntu 64 bits, incluindo Linux Mi
 
 ## Otimizações para computadores com pouca memória
 
-A versão 0.4.0 adota um perfil econômico adaptativo para máquinas com aproximadamente 4 GB de RAM:
+A versão 0.4.1 adota um perfil econômico adaptativo para máquinas com aproximadamente 4 GB de RAM:
 
 - Limite de 12 abas abertas.
 - Sugestões locais na barra de endereço, combinando histórico, favoritos e abas abertas sem enviar os termos digitados a um serviço externo.
@@ -60,7 +60,7 @@ O estacionamento é conservador: a meta de três WebViews residentes pode ser te
 | Falkon | Navegador gráfico baseado em Chromium, listado entre as opções Linux. | Referência de navegador leve, mas sem copiar recursos que aumentem dependências ou consumo. |
 | qutebrowser | Navegação orientada ao teclado. | Atalhos de localizar e zoom foram incorporados; o restante do modelo modal não foi adotado. |
 
-A implementação 0.4.0 combina sugestões privadas locais, seleção de mecanismo de pesquisa, progresso de carregamento, interrupção de navegação, localizar na página e controle de zoom. O indicador usa a estimativa fornecida pelo WebKitGTK; não representa uma medição exata do tempo restante.
+A implementação 0.4.1 combina sugestões privadas locais, seleção de mecanismo de pesquisa, progresso de carregamento, interrupção de navegação, localizar na página e controle de zoom. O indicador usa a estimativa fornecida pelo WebKitGTK; não representa uma medição exata do tempo restante.
 
 Fontes técnicas:
 - [Mozilla — arquitetura da barra de endereço](https://firefox-source-docs.mozilla.org/browser/urlbar/index.html)
@@ -111,7 +111,7 @@ Testes e pacote:
 
 ```bash
 python3 -m unittest discover -s tests -v
-APP_VERSION=0.4.0 bash scripts/build-deb.sh
+APP_VERSION=0.4.1 bash scripts/build-deb.sh
 ```
 
 ## Arquitetura e inventário
