@@ -115,6 +115,10 @@ python3 -m unittest discover -s tests -v
 APP_VERSION=0.4.1 bash scripts/build-deb.sh
 ```
 
+## Compilação nativa experimental
+
+O projeto possui uma trilha experimental de compilação com Nuitka. Ela gera um executável nativo para teste, sem substituir o pacote Debian padrão nem prometer aceleração do motor WebKitGTK. Limitações, dependências e critérios de comparação: [docs/NATIVE_BUILD.md](docs/NATIVE_BUILD.md).
+
 ## Arquitetura e inventário
 
 - [Plano de migração integral](docs/PORTING_PLAN.md)
