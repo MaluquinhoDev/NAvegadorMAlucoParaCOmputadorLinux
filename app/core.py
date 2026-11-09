@@ -2,8 +2,9 @@
 from urllib.parse import quote_plus, urlparse
 
 HOME_URL = "https://www.wikipedia.org"
-MAX_TABS = 30
-MAX_RESIDENT_TABS = 6
+MAX_TABS = 12
+MAX_RESIDENT_TABS = 3
+SUSPEND_AFTER_SECONDS = 180
 
 
 def normalize_input(value: str) -> str:
