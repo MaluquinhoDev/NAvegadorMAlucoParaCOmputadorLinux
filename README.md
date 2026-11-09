@@ -15,7 +15,7 @@ A cada atualização aprovada pelo GitHub Actions, o pacote Debian `.deb` é pub
 5. No terminal, entre na pasta extraída e execute:
 
 ```bash
-sudo apt install ./navegador-maluco_0.4.1_all.deb
+sudo apt install ./navegador-maluco_0.4.4_all.deb
 ```
 
 O gerenciador de pacotes instala as dependências GTK/WebKitGTK. Depois, abra **Navegador Maluco** pelo menu de aplicativos ou execute:
@@ -28,7 +28,7 @@ O pacote foi configurado para sistemas Debian/Ubuntu 64 bits, incluindo Linux Mi
 
 ## Otimizações para computadores com pouca memória
 
-A versão 0.4.1 adota um perfil econômico adaptativo para máquinas com aproximadamente 4 GB de RAM:
+A versão 0.4.4 adota um perfil econômico adaptativo para máquinas com aproximadamente 4 GB de RAM:
 
 - Limite de 12 abas abertas.
 - Sugestões locais na barra de endereço, combinando histórico, favoritos e abas abertas sem enviar os termos digitados a um serviço externo.
@@ -112,12 +112,18 @@ Testes e pacote:
 
 ```bash
 python3 -m unittest discover -s tests -v
-APP_VERSION=0.4.1 bash scripts/build-deb.sh
+APP_VERSION=0.4.4 bash scripts/build-deb.sh
 ```
 
-## Compilação nativa experimental
+## Versões Python e nativa
 
-O projeto possui uma trilha experimental de compilação com Nuitka. Ela gera um executável nativo para teste, sem substituir o pacote Debian padrão nem prometer aceleração do motor WebKitGTK. Limitações, dependências e critérios de comparação: [docs/NATIVE_BUILD.md](docs/NATIVE_BUILD.md).
+A CI publica dois pacotes separados:
+- **Python:** `navegador-maluco-linux-mint-deb`, arquitetura independente, usa o interpretador do sistema.
+- **Nativa Nuitka:** `navegador-maluco-native-deb-ubuntu-24.04-amd64`, executável compilado, empacotado como .deb para amd64 e validado em Ubuntu 24.04. O comando instalado é `navegador-maluco-native`.
+
+A versão nativa acelerada ainda depende do runtime Python e das bibliotecas GTK/WebKitGTK compatíveis. O pacote construído em Ubuntu 24.04 destina-se inicialmente à base Ubuntu 24.04 (Linux Mint 22.x); não deve ser instalado em Mint 21.x ou Debian antigo sem build e teste específicos. A CI confirma instalação e inicialização, não um ganho de velocidade em benchmark.
+
+Detalhes e critérios de promoção: [docs/NATIVE_BUILD.md](docs/NATIVE_BUILD.md).
 
 ## Arquitetura e inventário
 
