@@ -43,10 +43,10 @@ jobs:
         run: bash scripts/check-extension.sh
 
       - name: Build .deb package
-        run: APP_VERSION=0.2.0 bash scripts/build-deb.sh
+        run: APP_VERSION=0.3.0 bash scripts/build-deb.sh
 
       - name: Inspect Debian package
-        run: dpkg-deb --info dist/navegador-maluco_0.2.0_all.deb
+        run: dpkg-deb --info dist/navegador-maluco_0.3.0_all.deb
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
