@@ -24,7 +24,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
 from core import HOME_URL, MAX_TABS, MAX_RESIDENT_TABS, SUSPEND_AFTER_SECONDS, HIGH_PRESSURE_SUSPEND_AFTER_SECONDS, CRITICAL_PRESSURE_SUSPEND_AFTER_SECONDS, SEARCH_ENGINES, can_create_tab, is_youtube_shorts, memory_pressure_level, normalize_input
 
 APP_NAME = "Navegador Maluco"
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 APP_DIR = Path(__file__).resolve().parent
 ASSET_DIR = APP_DIR / "assets"
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "navegador-maluco"
