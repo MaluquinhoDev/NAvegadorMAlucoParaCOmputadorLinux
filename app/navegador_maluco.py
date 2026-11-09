@@ -1215,18 +1215,17 @@ def main():
         def check_startup():
             if window.active_view() is not None:
                 result["webview_ready"] = True
-                Gtk.main_quit()
+                window.destroy()
                 return GLib.SOURCE_REMOVE
             return GLib.SOURCE_CONTINUE
 
         def stop_after_timeout():
-            Gtk.main_quit()
+            window.destroy()
             return GLib.SOURCE_REMOVE
 
         GLib.timeout_add(100, check_startup)
         GLib.timeout_add_seconds(15, stop_after_timeout)
         Gtk.main()
-        window.destroy()
         if not result["webview_ready"]:
             raise SystemExit("WebView não inicializou dentro de 15 segundos.")
         return
